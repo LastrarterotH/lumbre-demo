@@ -1,0 +1,508 @@
+  :root {
+    --vidrio: rgba(253, 252, 247, .8);
+    --vidrio2: rgba(58, 50, 38, .06);
+    --linea: rgba(58, 50, 38, .12);
+    --texto: #3a3226; --texto2: #837a66;
+    --verde: #4fae3f; --dorado: #e8a51e; --teja: #e2603d; --azul: #2f97d8;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #79c4e8; }
+  canvas { display: block; cursor: grab; touch-action: none; } /* el dedo panea y pellizca el MUNDO: el navegador no debe hacer scroll ni zoom de página encima */
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; color: var(--texto);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+  }
+  #hud .clic { pointer-events: auto; }
+  b, .rec b { font-variant-numeric: tabular-nums; }
+  .title {
+    position: absolute; top: 18px; left: 20px; color: #fff;
+    font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif;
+    text-shadow: 0 2px 10px rgba(20, 60, 90, .4);
+  }
+  .title h1 { margin: 0; font-size: 25px; font-weight: 800; letter-spacing: .2px; }
+  .title p { margin: 2px 0 0 1px; font-size: 11.5px; color: rgba(255, 255, 255, .82); letter-spacing: .5px; text-transform: uppercase; font-weight: 600; }
+  .title #progreso { display: none; margin-top: 5px; font-size: 11px; letter-spacing: .3px; text-transform: none; font-weight: 600; color: rgba(255, 255, 255, .8); pointer-events: auto; cursor: pointer; }
+  .title #progreso .ok { color: rgba(255, 255, 255, .55); }
+  .title #progreso .foco { color: #ffd873; animation: focoPulso 1.8s infinite; }
+  @keyframes focoPulso { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+  .chip.guia-flash { animation: guiaFlash .5s 5; }
+  @keyframes guiaFlash { 50% { box-shadow: 0 0 0 4px rgba(232, 165, 30, .65), 0 0 18px rgba(232, 165, 30, .5); transform: translateY(-3px); } }
+  #consejo { /* la consejera: el siguiente paso del jugador, con la voz de la época */
+    /* COLUMNA DERECHA: la voz vive en el borde libre, separada de las barras de datos para que se lea
+       como consejo y no como otro indicador. Deja la esquina inferior izquierda entera al diorama. */
+    position: absolute; right: 20px; top: 210px; width: 210px; display: none;
+    flex-direction: column; align-items: flex-start; gap: 9px; padding: 13px 14px; border-radius: 16px;
+    background: var(--vidrio); border: 1px solid var(--linea); border-left: 3px solid var(--dorado);
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .25); cursor: pointer; backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif;
+    transition: transform .15s ease;
+  }
+  #consejo:hover { transform: translateY(-2px); }
+  #consejo canvas { width: 46px; height: 46px; flex: none; border-radius: 50%; background: rgba(232, 165, 30, .16); }
+  #consejo b { display: block; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; color: #a86f14; margin-bottom: 1px; }
+  #consejo span { font-size: 12.5px; font-weight: 600; color: var(--texto); line-height: 1.4; }
+  #consejo.pop { animation: consejoPop .4s ease-out; }
+  @keyframes consejoPop { 0% { transform: translateY(10px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+  .title #progreso .meta { color: rgba(255, 255, 255, .62); font-style: italic; }
+  .title #progreso .sepp { color: rgba(255, 255, 255, .35); margin: 0 2px; }
+  /* barra de recursos: un solo cristal */
+  #recursos {
+    position: absolute; top: 16px; right: 20px; display: flex; align-items: center; gap: 14px;
+    background: var(--vidrio); backdrop-filter: blur(14px) saturate(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    border: 1px solid var(--linea); border-radius: 16px; padding: 9px 16px;
+    box-shadow: 0 8px 24px rgba(30, 60, 90, .22); font-size: 13.5px;
+  }
+  #recursos .rec { display: flex; flex-direction: column; align-items: center; gap: 0; white-space: nowrap; cursor: pointer; }
+  #recursos .rec .num { display: flex; align-items: baseline; gap: 5px; }
+  #recursos .rec label { font-size: 8.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--texto2); cursor: inherit; margin-top: 1px; }
+  #recursos .rec i { font-style: normal; font-size: 11.5px; color: var(--texto2); }
+  #recursos .sep { width: 1px; height: 24px; background: var(--linea); }
+  #recursos .rec:hover { filter: brightness(1.08); }
+  #hudinfo {
+    /* pointer-events VIVO: dentro hay enlaces (el DOI de la fuente) y con none eran inclicables.
+       Mientras el cursor esté encima no se desvanece (ver los oyentes en 19-render). */
+    display: none; position: fixed; z-index: 42; max-width: 270px; pointer-events: auto;
+    font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif;
+    background: var(--vidrio); backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--linea); border-top: 3px solid var(--dorado); border-radius: 13px; padding: 10px 13px 11px;
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .3); font-size: 12.5px; color: var(--texto2); line-height: 1.5;
+    animation: fichaPop .22s cubic-bezier(.34, 1.56, .64, 1); transition: opacity .55s ease;
+  }
+  #hudinfo h4 { margin: 0 0 4px; font-size: 13.5px; color: var(--texto); }
+  #hudinfo b:not([class]) { color: var(--texto); } /* sin :not, el negro del popup pisaba el verde/rojo de .delta-bien/.delta-mal */
+  #mats { position: fixed; top: 74px; right: 20px; display: none; gap: 12px; align-items: center; z-index: 5;
+    background: var(--vidrio); backdrop-filter: blur(14px) saturate(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    border: 1px solid var(--linea); border-radius: 16px; padding: 6px 14px 5px; font-size: 12.5px; color: var(--texto2); box-shadow: 0 8px 24px rgba(30, 60, 90, .22); }
+  #mats span[data-mat] { display: flex; flex-direction: column; align-items: center; gap: 0; cursor: pointer; }
+  #mats span[data-mat]:hover { filter: brightness(1.1); }
+  #mats .num { display: flex; align-items: baseline; gap: 3px; }
+  #mats label { font-size: 8px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto2); cursor: inherit; }
+  #mats b { color: var(--texto); font-variant-numeric: tabular-nums; }
+  .delta-mal { color: #d34c2e; font-weight: 700; }
+  .delta-aviso { color: #b0741a; font-weight: 700; } /* lo que pide atención sin ser un error (el saber que junta polvo) */
+  .debito { position: fixed; z-index: 60; transform: translateX(-50%); font-weight: 800; font-size: 13px;
+    color: #d34c2e; pointer-events: none; white-space: nowrap; animation: debitoAnim 1.4s ease-out forwards;
+    text-shadow: 0 1px 4px rgba(255,255,255,.6); }
+  @keyframes debitoAnim { 0% { opacity: 0; margin-top: 0; } 15% { opacity: 1; } 100% { opacity: 0; margin-top: 26px; } }
+  .debito.gana { color: #35862a; animation-name: ganaAnim; }   /* lo que entra sube; lo que sale, cae */
+  @keyframes ganaAnim { 0% { opacity: 0; margin-top: 0; } 15% { opacity: 1; } 100% { opacity: 0; margin-top: -22px; } }
+  .delta-bien { color: #35862a; font-weight: 700; }
+  /* la galería de las Ideas: los pensadores tienen rango propio */
+  #ideas { position: absolute; top: 108px; left: 20px; } /* deja aire a la línea de progreso de época */
+  .ideas-titulo {
+    display: block; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase;
+    color: rgba(255, 255, 255, .85); text-shadow: 0 1px 6px rgba(20, 60, 90, .4); margin-bottom: 6px;
+  }
+  #ideas-fila { display: flex; flex-direction: column; gap: 8px; }
+  .medallon {
+    width: 46px; height: 46px; border-radius: 50%; cursor: pointer; overflow: hidden;
+    background: var(--vidrio); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 2px solid rgba(58, 50, 38, .18); box-shadow: 0 4px 12px rgba(30, 60, 90, .25);
+    transition: transform .15s;
+  }
+  .medallon:hover { transform: scale(1.12); }
+  .medallon canvas { width: 100%; height: 100%; display: block; }
+  .medallon.pendiente { border-color: var(--dorado); animation: latido 1.2s infinite; box-shadow: 0 0 0 3px rgba(232, 165, 30, .35), 0 0 18px rgba(232, 165, 30, .5); }
+  .medallon.adoptado { border-color: var(--verde); }
+  .medallon.abierto { box-shadow: 0 0 0 3px rgba(232, 165, 30, .5); }
+  #panel .cita { font-style: italic; color: #b7791f; margin: 0 0 7px; font-size: 12.5px; }
+  .medallon-wrap { position: relative; }
+  .tarjeta-pensador {
+    display: none; position: absolute; left: 56px; top: -8px; width: 300px; z-index: 6;
+    background: var(--vidrio); backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--linea); border-radius: 14px; padding: 12px 14px;
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .3); font-size: 12.5px; color: var(--texto); line-height: 1.5;
+  }
+  .medallon-wrap:hover .tarjeta-pensador { display: block; }
+  .tarjeta-pensador::before { content: ''; position: absolute; left: -16px; top: 0; width: 16px; height: 100%; } /* puente del hover */
+  .tarjeta-pensador h4 { margin: 0 0 2px; font-size: 13.5px; }
+  .tarjeta-pensador .años { color: var(--texto2); font-weight: 400; font-size: 11.5px; }
+  .tarjeta-pensador .cita { font-style: italic; color: #b7791f; margin: 4px 0; }
+  .tarjeta-pensador .bio { color: var(--texto2); }
+  .tarjeta-pensador .obras { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--linea); font-size: 12px; }
+  .tarjeta-pensador a { color: var(--azul); font-weight: 700; text-decoration: none; }
+  .tarjeta-pensador a:hover { text-decoration: underline; }
+  /* la ficha del clan: clic sobre cualquier personaje, y la tarjeta lo sigue */
+  #ficha {
+    display: none; position: fixed; z-index: 40; max-width: 260px; pointer-events: none;
+    font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif;
+    --acento: var(--dorado);
+    background: var(--vidrio); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    border: 1px solid var(--linea); border-top: 3px solid var(--acento); border-radius: 14px; padding: 10px 13px 11px;
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .3); font-size: 12.5px; color: var(--texto); line-height: 1.5;
+    transform-origin: bottom center;
+  }
+  #ficha.f-alumno { --acento: var(--verde); }
+  #ficha.f-docente { --acento: var(--azul); }
+  #ficha.f-oficio { --acento: var(--dorado); }
+  #ficha.f-pensador { --acento: #b7791f; }
+  #ficha::after { /* la flechita que señala al personaje */
+    content: ''; position: absolute; left: var(--fx, 50%); bottom: -8px; transform: translateX(-50%);
+    border: 8px solid transparent; border-bottom: none; border-top-color: rgba(253, 252, 247, .92);
+  }
+  #ficha.lado-der { transform-origin: left center; }
+  #ficha.lado-izq { transform-origin: right center; }
+  #ficha.lado-der::after { /* tarjeta a la derecha del personaje: la flechita mira a la izquierda */
+    left: -8px; bottom: auto; top: var(--fy, 50%); transform: translateY(-50%);
+    border: 8px solid transparent; border-left: none; border-top-color: transparent; border-right-color: rgba(253, 252, 247, .92);
+  }
+  #ficha.lado-izq::after { /* tarjeta a la izquierda: la flechita mira a la derecha */
+    left: auto; right: -8px; bottom: auto; top: var(--fy, 50%); transform: translateY(-50%);
+    border: 8px solid transparent; border-right: none; border-top-color: transparent; border-left-color: rgba(253, 252, 247, .92);
+  }
+  #ficha.volteada { transform-origin: top center; }
+  #ficha.volteada::after { bottom: auto; top: -8px; border-top: none; border-bottom: 8px solid rgba(253, 252, 247, .92); }
+  #ficha .cab { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+  #ficha .emoji {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; background: color-mix(in srgb, var(--acento) 18%, transparent);
+    border: 1.5px solid color-mix(in srgb, var(--acento) 45%, transparent);
+  }
+  #ficha .nom { font-size: 14px; font-weight: 800; line-height: 1.25; }
+  #ficha .rol { color: var(--acento); font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: .7px; }
+  #ficha .cita { font-style: italic; color: #b7791f; margin: 3px 0; }
+  #ficha .linea { color: var(--texto2); }
+  #ficha.pop { animation: fichaPop .32s cubic-bezier(.34, 1.56, .64, 1); }
+  @keyframes fichaPop { from { transform: translateY(8px) scale(.8); opacity: 0; } to { transform: none; opacity: 1; } }
+  /* avisos */
+  #avisos { position: absolute; top: 112px; /* bajo la línea de progreso (acaba en y=93): un toast la cortaba a media frase */ left: 50%; transform: translateX(-50%); width: min(560px, 90vw); display: flex; flex-direction: column; gap: 6px; z-index: 90; }
+  .toast, #alerta-valle, #offline {
+    background: var(--vidrio); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--linea); border-left: 3px solid var(--verde);
+    border-radius: 10px; padding: 8px 13px; font-size: 12.5px; color: var(--texto);
+    box-shadow: 0 6px 18px rgba(30, 60, 90, .18);
+  }
+  .toast { transition: opacity .6s; }
+  #alerta-valle { border-left-color: #e0a33a; display: none; }
+  #offline { border-left-color: var(--dorado); display: none; }
+  #toasts { display: flex; flex-direction: column; gap: 6px; }
+  /* el dock: una fila de chips, el mundo siempre visible */
+  /* EL BORDE INFERIOR ES UNA FILA FLEX (#abajo): lado elástico · dock · lado elástico con los controles.
+     Con los dos lados en flex:1 el dock queda CENTRADO mientras hay sitio; cuando no lo hay, los lados
+     ceden (primero el vacío de la izquierda) y el dock se corre en vez de meterse debajo del rincón.
+     Esto reemplaza la reserva fija en px, que había que recalcular a mano cada vez que el rincón
+     cambiaba de ancho, y que quedó corta al llegar 💾/📥: el dock pisaba los controles en TODOS los
+     tamaños. El wrap interno del dock sigue de válvula final en ventanas angostas. */
+  #abajo {
+    position: absolute; left: 14px; right: 14px; bottom: 16px;
+    display: flex; align-items: flex-end; gap: 10px; pointer-events: none;
+  }
+  #abajo .lado { flex: 1 1 0; min-width: 0; }
+  #abajo .lado.der { display: flex; justify-content: flex-end; min-width: max-content; }
+  #dock {
+    flex: 0 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center;
+    padding: 7px 9px;
+    background: var(--vidrio); backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--linea); border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .25);
+  }
+  #dock .div { width: 1px; height: 22px; background: var(--linea); margin: 0 3px; }
+  .chip {
+    position: relative; display: flex; align-items: center; gap: 6px;
+    padding: 6px 9px; border-radius: 10px; cursor: pointer; user-select: none;
+    background: var(--vidrio2); border: 1px solid transparent;
+    font: 600 12px -apple-system, sans-serif; color: var(--texto); white-space: nowrap;
+  }
+  .chip:hover { background: rgba(58, 50, 38, .12); }
+  /* "abierto" (su ficha está desplegada) va en tinta, no en ámbar: el dorado es SOLO del foco */
+  .chip.abierto { border-color: rgba(58, 50, 38, .42); background: rgba(58, 50, 38, .14); }
+  .chip.apagado { opacity: .45; cursor: default; }
+  /* UN SOLO FOCO: .atencion (anillo + flechita) lo lleva UN chip, el que dice la consejera.
+     Los demás accionables van en voz baja con .disponible: se pueden tocar, pero no gritan. */
+  /* .disponible = "aquí también puedes actuar". Se ve, pero sin flechita ni latido: eso es solo del foco.
+     Tímido no sirve: el jugador tiene que poder contar de un vistazo cuántas cosas le esperan. */
+  .chip.disponible { border-color: rgba(232, 165, 30, .8); background: rgba(232, 165, 30, .13); }
+  .chip.disponible::before { /* la cuenta pendiente: un punto ámbar en la esquina, como un sello */
+    content: ''; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--dorado); box-shadow: 0 0 0 2px rgba(253, 252, 247, .85);
+  }
+  .chip:not(.atencion):not(.abierto) { font-weight: 500; opacity: .9; }
+  /* PLEGADO POR ESTADO (no por ancho): el nombre aparece mientras el saber TE PIDE ALGO — cuando lo
+     estás creando, formando, cuando decae, cuando puedes actuar o tienes su ficha abierta. Ya aprendido
+     y en calma, se queda en icono + semáforo + pips, y su nombre vive en el tooltip, la ficha y el Museo.
+     Es plegado predecible: depende de lo que pasa en la escuela, no del tamaño de tu ventana. */
+  .chip.quieto .nom { display: none; }
+  .chip.atencion { box-shadow: 0 0 0 1.5px rgba(232, 165, 30, .75), 0 0 14px rgba(232, 165, 30, .4); }
+  .chip.atencion::after { /* la flechita que rebota: "aquí hay una decisión esperándote" */
+    content: '▼'; position: absolute; left: 50%; top: -27px;
+    font-size: 15px; color: var(--dorado); pointer-events: none;
+    text-shadow: 0 1.5px 0 rgba(255, 252, 240, .9), 0 3px 10px rgba(120, 80, 10, .5);
+    animation: flechitaBote 1.1s ease-in-out infinite;
+  }
+  @keyframes flechitaBote { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 6px); } }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: #b3ab99; flex: none; }
+  /* SEMÁFORO (regla del usuario): rojo = detenido · amarillo = en progreso · verde = fase completada · medalla = todo listo */
+  .chip .dot.novedad { background: var(--dorado); animation: latido 1.1s infinite; }
+  .chip .dot.valle { background: #d13f2e; animation: latido 1.1s infinite; }
+  .chip .dot.formando { background: #f2c035; }
+  .chip .dot.meseta { background: var(--verde); }
+  .chip .dot.dominada { background: none; box-shadow: none; width: auto; height: auto; border-radius: 0; font-size: 11px; line-height: 1; }
+  .chip .dot.dominada::after { content: '🏅'; }
+  .chip .pips { display: flex; gap: 2.5px; margin-left: 4px; align-items: center; }
+  .chip .pips i { width: 4.5px; height: 4.5px; border-radius: 50%; background: rgba(58,50,38,.16); }
+  .chip .pips i.on { background: var(--dorado); }
+  .chip .pips i.lista { animation: latido 1.2s infinite; background: rgba(232,165,30,.5); }
+  .chip .mini {
+    position: absolute; left: 8px; right: 8px; bottom: 3px; height: 2px;
+    background: rgba(58, 50, 38, .15); border-radius: 2px; overflow: hidden;
+  }
+  .chip .mini i { display: block; height: 100%; background: var(--teja); }
+  @keyframes latido { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .7; } }
+  /* panel de detalle: uno a la vez, sobre el dock */
+  #panel {
+    position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%);
+    width: min(360px, 92vw); display: none;
+    background: var(--vidrio); backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid var(--linea); border-radius: 16px; padding: 14px 16px;
+    box-shadow: 0 14px 40px rgba(30, 60, 90, .3); font-size: 13px; line-height: 1.5;
+  }
+  #panel h3 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  #panel h3 .año { color: var(--texto2); font-weight: 400; font-size: 11.5px; }
+  #panel .cuerpo { color: var(--texto2); }
+  #panel .cuerpo b { color: var(--texto); }
+  #panel .ficha { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); font-size: 12px; color: var(--texto2); }
+  /* lo que este saber hace FUERA de su propio porcentaje: el acoplamiento con el resto del mundo */
+  #panel .acople { margin-top: 8px; padding: 6px 9px; border-radius: 8px; background: rgba(232,165,30,.12); color: #8a5c0a; font-size: 11.5px; line-height: 1.45; }
+  #panel .acople b { color: #6b470a; }
+  #panel .fuente { margin-top: 7px; font-size: 10.5px; color: var(--texto2); line-height: 1.45; }
+  #panel .fuente a { color: #2170a6; text-decoration: none; border-bottom: 1px dotted rgba(33,112,166,.5); }
+  #panel .fuente a:hover { border-bottom-style: solid; }
+  #panel .fuente .rev { font-style: italic; opacity: .8; }
+  #panel .fuente .debate { margin-top: 4px; padding: 5px 8px; border-radius: 8px; background: rgba(232,165,30,.12); color: #8a5c0a; }
+  #panel button { margin-top: 10px; }
+  #panel .galeria { max-height: 42vh; overflow-y: auto; padding-right: 4px; }
+  #panel .sala { margin-top: 10px; font-weight: 800; color: #b7791f; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+  #panel .pieza { padding: 7px 0; border-bottom: 1px solid var(--linea); font-size: 12px; color: var(--texto); }
+  #panel .pieza span { color: var(--texto2); font-size: 11.5px; }
+  .fase {
+    font-size: 9px; font-weight: 800; letter-spacing: .6px; padding: 2.5px 8px;
+    border-radius: 99px; white-space: nowrap;
+  }
+  .fase.sin { background: rgba(58,50,38,.08); color: var(--texto2); }
+  .fase.novedad { background: rgba(232,165,30,.16); color: #b7791f; }
+  .fase.valle { background: rgba(209,63,46,.14); color: #b23325; animation: latido 1.2s infinite; }
+  .fase.formando { background: rgba(242,192,53,.22); color: #93700e; }
+  .fase.meseta { background: rgba(79,174,63,.16); color: #35862a; }
+  .fase.perfec { background: rgba(242,192,53,.22); color: #93700e; }
+  .fase.dominada { background: rgba(232,165,30,.28); color: #8a5c0a; box-shadow: 0 0 0 1px rgba(232,165,30,.5) inset; }
+  button {
+    font: 700 12.5px -apple-system, sans-serif; color: #fff;
+    background: var(--verde); border: none; border-radius: 10px;
+    padding: 8px 14px; cursor: pointer; width: 100%;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.apagado { opacity: .45; } /* se ve apagado pero SÍ responde: al tocarlo, la consejera dice de dónde sacar lo que falta */
+  button.fantasma {
+    background: transparent; color: var(--texto);
+    border: 1px solid rgba(58, 50, 38, .3); width: auto;
+  }
+  /* esquina dev: vive dentro de #abajo (fila flex), ya no es un absoluto aparte */
+  #dev { display: flex; gap: 4px; align-items: center; opacity: .8;
+    background: var(--vidrio); backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border: 1px solid var(--linea); border-radius: 16px; padding: 6px 8px;
+    box-shadow: 0 10px 30px rgba(30, 60, 90, .25); }
+  #dev:hover { opacity: 1; }
+  #dev button {
+    width: auto; padding: 5px 10px; font-size: 11px;
+    background: var(--vidrio2); color: var(--texto2); border: 1px solid transparent; border-radius: 10px;
+  }
+  #dev button:hover { background: rgba(58, 50, 38, .12); }
+  #dev button.on { color: #fff; background: var(--verde); border-color: transparent; }
+  /* paneles centrales: victoria y visitas */
+  /* ESCALAFÓN DE DECISIÓN (el z-index es espejo de la prioridad; antes estaba invertido):
+     visita 110 > victoria 100 > avisos 90 > .debito 60 > hudinfo 42 > ficha 40 > tarjeta-pensador 6 > mats 5.
+     Una sola superficie de decisión a la vez: nada efímero puede sobrevolar un modal. */
+  #victoria, #visita { /* el velo SÍ bloquea: si se ve modal, se comporta como modal (nada de tocar el dock por debajo) */
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(25, 60, 85, .45); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  #victoria { z-index: 100; }
+  #visita { z-index: 110; }
+  /* la portada y el agradecimiento (2026-09-07): el mismo velo y la misma caja; la portada por encima de todo lo jugable */
+  #portada, #gracias {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(25, 60, 85, .5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    pointer-events: auto;
+  }
+  #portada { z-index: 150; }
+  #gracias { z-index: 105; }
+  #portada .caja, #gracias .caja {
+    background: linear-gradient(160deg, #fbf6e8, #efe6cf); border-radius: 20px;
+    padding: 26px 32px 24px; max-width: 540px; max-height: calc(100% - 40px); overflow: auto; color: #3a2f20;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55); text-align: center;
+  }
+  #portada .marca { font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif; font-weight: 900; font-size: 42px; letter-spacing: .5px; line-height: 1; color: #2c2416; }
+  #portada .lema { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: #8a6a3a; margin: 8px 0 14px; }
+  #portada p, #gracias p { font-size: 14.5px; line-height: 1.55; text-align: left; margin: 0 0 10px; }
+  #portada h3 { font-family: "Avenir Next", "Nunito", "Segoe UI", -apple-system, sans-serif; font-weight: 800; font-size: 15px; margin: 14px 0 6px; text-align: left; color: #2c2416; }
+  #portada ol { text-align: left; margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.5; }
+  #portada ol li { margin-bottom: 4px; }
+  #portada .credito { margin: 16px 0 12px; font-size: 12.5px; color: #6b5b42; }
+  #gracias h2 { font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif; font-weight: 800; margin: 0 0 10px; }
+  #gracias .firma { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: 18px; color: #2c2416; margin: 6px 0 8px; text-align: right; }
+  #gracias .credito { font-size: 12px; color: #6b5b42; margin: 0 0 14px; }
+  #gracias .botones { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  #portada button, #gracias button, #gracias .boton { width: auto; padding: 9px 18px; }
+  #gracias .boton { /* el enlace vestido de botón: el mismo verde, para que «Dejar un comentario» pese igual que «Seguir contemplando» */
+    display: inline-block; text-decoration: none; font: 700 12.5px -apple-system, sans-serif; color: #fff;
+    background: var(--verde); border-radius: 10px; padding: 9px 18px; cursor: pointer;
+  }
+  #gracias .boton:hover { filter: brightness(1.08); }
+  #gracias .direccion { margin-top: 12px; font-size: 12.5px; color: #6b5b42; }
+  /* el velo de "otra pestaña tomó la partida": por encima de TODO, incluida una visita abierta */
+  #otratab { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(25, 60, 85, .55); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    pointer-events: auto; z-index: 200; }
+  #otratab .caja { background: linear-gradient(160deg, #fbf6e8, #efe6cf); border-radius: 20px;
+    padding: 28px 32px; max-width: 440px; color: #3a2f20;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55); text-align: center; }
+  #otratab h2 { font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif; font-weight: 800; margin: 0 0 10px; }
+  #otratab p { font-size: 14.5px; line-height: 1.55; text-align: left; }
+  #otratab button { width: auto; padding: 9px 18px; }
+  #victoria .caja, #visita .caja {
+    background: linear-gradient(160deg, #fbf6e8, #efe6cf); border-radius: 20px;
+    padding: 28px 32px; max-width: 480px; color: #3a2f20;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55); text-align: center;
+  }
+  #victoria h2, #visita h2 { font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif; font-weight: 800; margin: 0 0 10px; }
+  #victoria p, #visita p { font-size: 14.5px; line-height: 1.55; text-align: left; }
+  #victoria button, #visita button { width: auto; padding: 9px 18px; }
+  #visita button#b-luego { background: transparent; color: #6b5b42; border: 1px solid #c9b98f; }
+
+  /* ============================================================
+     RESPONSIVO. Tres escalones medidos con la matriz de tamaños del QA (2026-07-31), no a ojo:
+     ≤1100 los toasts chocaban con los materiales; ≤880 los recursos con el título; ≤700 (móvil,
+     tablet vertical) colapsaba todo. La regla: nada se pisa, nada se sale, y lo que se esconde
+     (las etiquetas bajo los números) sigue explicado en el popup de cada indicador.
+     ============================================================ */
+  @media (max-width: 1100px) {
+    /* los toasts se ANCLAN a la izquierda (esquivando los medallones de las Ideas, que acaban en x≈66):
+       centrados, con dos o tres apilados acababan debajo de la consejera o de los materiales */
+    #avisos { top: 132px; left: 100px; transform: none; width: min(430px, calc(100vw - 360px)); }
+    #recursos { gap: 10px; padding: 8px 12px; font-size: 12.5px; }
+    #mats { gap: 10px; padding: 6px 11px 5px; }
+  }
+  @media (max-width: 880px) {
+    #recursos { gap: 8px; font-size: 12px; }
+    #recursos .rec label, #mats label { display: none; } /* el nombre vive en el popup del indicador */
+    #recursos .rec i { font-size: 10.5px; }
+    .title h1 { font-size: 20px; }
+    .title { max-width: 36vw; }                     /* el progreso envuelve antes de tocar los recursos */
+    #consejo { width: 180px; top: 170px; }
+  }
+  @media (max-width: 700px) {
+    /* COLUMNA: título / recursos / progreso / materiales / avisos; consejera e Ideas flotan sobre el
+       dock, cada una en su esquina. Un solo escalón para toda la banda angosta (probado en 390-700). */
+    .title { top: 10px; left: 12px; max-width: calc(100vw - 24px); }
+    .title h1 { font-size: 17px; }
+    #era-chip { display: none; }                    /* en angosto, la línea de progreso vale más que el rótulo de época */
+    .title #progreso { position: fixed; top: 84px; left: 10px; right: 10px; }
+    #recursos { top: 42px; left: 10px; right: 10px; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; padding: 6px 9px; font-size: 11.5px; }
+    #recursos .sep { display: none; }
+    #mats { top: 126px; left: 10px; right: 10px; justify-content: space-between; gap: 7px; font-size: 11px; padding: 5px 9px 4px; }
+    #avisos { top: 172px; left: 10px; width: calc(100vw - 20px); }
+    #consejo { top: auto; bottom: 205px; right: 10px; width: 146px; padding: 10px 11px; gap: 7px; }
+    #consejo canvas { width: 36px; height: 36px; }
+    #consejo span { font-size: 11.5px; }
+    #ideas { top: auto; bottom: 205px; left: 10px; }  /* espejo de la consejera */
+    #ideas-fila { flex-direction: row; }
+    #abajo { left: 8px; right: 8px; bottom: 8px; flex-wrap: wrap; } /* si el rincón no cabe, salta de fila en vez de pisar */
+    #abajo .lado:not(.der) { display: none; }       /* en angosto el centrado es un lujo: el dock usa todo el ancho */
+    #dev { padding: 5px 6px; gap: 3px; }
+    #dev button { padding: 4px 7px; font-size: 10.5px; }
+    #panel { width: min(340px, 94vw); font-size: 12.5px; }
+    .chip { padding: 6px 8px; }
+  }
+  /* dedo en vez de cursor (la tablet del aula): blancos más generosos donde más se toca.
+     El paneo con el dedo y el pellizco viven en 19-render (Pointer Events). */
+  @media (pointer: coarse) {
+    .chip { padding: 9px 11px; }
+    #dev button { padding: 8px 11px; }
+    #recursos .rec, #mats span[data-mat] { padding: 2px 1px; }
+  }
+
+  /* ===================== RESPONSIVO Y TÁCTIL (2026-09-07) =====================
+     Regla del proyecto desde hoy: el juego se juega con el dedo en un celular. Tres cortes:
+     celular vertical (≤640 px de ancho), celular horizontal (≤520 px de alto) y todo lo demás
+     (tableta y escritorio, la disposición validada). Con yemas (pointer: coarse) nada tocable
+     baja de 36 px. El borde inferior publica su alto en --hud-abajo (19-render) para que la
+     consejera y el panel se apoyen encima sin pisarlo. */
+  #hud, #hud * { -webkit-tap-highlight-color: transparent; }
+  #hud .clic, #hud button, .chip, .medallon, #recursos .rec, #mats span[data-mat] { touch-action: manipulation; } /* sin doble-tap-zoom en los controles */
+  canvas#scene { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+  @media (pointer: coarse) {
+    .chip { min-height: 36px; padding: 6px 11px; }
+    #dev button { min-height: 36px; min-width: 36px; padding: 6px 10px; font-size: 12px; }
+    #dev { opacity: .95; }
+    .tarjeta-pensador::before { display: none; }
+  }
+  @media (max-width: 640px) { /* ---- celular vertical ---- */
+    #recursos { left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top)); justify-content: space-between; gap: 4px; padding: 6px 8px; font-size: 12px; border-radius: 12px; }
+    #recursos .rec label { font-size: 7.5px; }
+    #recursos .rec i { display: none; } /* la tasa por segundo no cabe: vive en el glosario y en la ficha */
+    #recursos .sep { display: none; }
+    .title { top: calc(58px + env(safe-area-inset-top)); left: 10px; right: 150px; }
+    .title h1 { font-size: 17px; }
+    .title p { font-size: 9.5px; }
+    .title #progreso { font-size: 10px; margin-top: 3px; }
+    #mats { top: calc(58px + env(safe-area-inset-top)); right: 8px; left: auto; /* el corte de 700 px la dejaba a todo lo ancho, tapando el título */ gap: 8px; padding: 4px 9px; font-size: 11px; border-radius: 12px; }
+    #ideas { top: calc(112px + env(safe-area-inset-top)); bottom: auto; left: 10px; } /* bottom: sin él, el «bottom: 205px» del corte de 700 px la estiraba de arriba abajo y su caja invisible se comía los toques del mundo */
+    .ideas-titulo { display: none; }
+    /* la fila no tiene tope de cantidad (8 en China, 11 en el futuro): termina antes del rincón (3D: --dev-ancho) y se
+       desplaza con el dedo, sin barra. El relleno deja respirar la sombra y el aro del medallón, que el desplazamiento recorta */
+    #ideas { max-width: calc(100vw - 26px - var(--dev-ancho, 0px)); }
+    #ideas-fila { flex-direction: row; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; padding: 4px; margin: -4px; }
+    #ideas-fila::-webkit-scrollbar { display: none; }
+    .medallon-wrap { flex: none; }
+    .medallon { width: 38px; height: 38px; }
+    .tarjeta-pensador { position: fixed; left: 8px; right: 8px; top: calc(158px + env(safe-area-inset-top)); width: auto; z-index: 45; }
+    #avisos { top: calc(158px + env(safe-area-inset-top)); width: 94vw; }
+    .toast, #alerta-valle, #offline { font-size: 12px; padding: 7px 10px; }
+    #consejo { left: 8px; right: 8px; width: auto; top: auto; bottom: calc(var(--hud-abajo, 100px) + 14px + env(safe-area-inset-bottom)); flex-direction: row; align-items: center; gap: 9px; padding: 8px 10px; }
+    #consejo canvas { width: 38px; height: 38px; }
+    #consejo span { font-size: 12px; }
+    #abajo { left: 6px; right: 6px; bottom: calc(6px + env(safe-area-inset-bottom)); flex-direction: column-reverse; align-items: stretch; gap: 6px; }
+    #abajo .lado:not(.der) { display: none; }
+    #abajo .lado.der { min-width: 0; justify-content: center; }
+    #dev { flex-wrap: wrap; justify-content: center; gap: 5px; }
+    #dock { padding: 6px; gap: 5px; }
+    #panel { bottom: calc(var(--hud-abajo, 100px) + 14px + env(safe-area-inset-bottom)); width: min(360px, 96vw); max-height: 56vh; overflow-y: auto; }
+    #panel[style*="display: block"] ~ #consejo { display: none !important; } /* una superficie a la vez: con el panel abierto, la consejera se retira (los dos se apoyan en el mismo borde) */
+    #ficha { max-width: min(260px, 84vw); }
+    #hudinfo { max-width: min(270px, 90vw); }
+    #victoria .caja, #visita .caja, #portada .caja, #gracias .caja, #otratab .caja { max-width: min(540px, 94vw); padding: 18px 16px 16px; max-height: calc(100% - 20px); overflow: auto; }
+    #portada .marca { font-size: 32px; }
+    #portada ol { padding-left: 18px; }
+  }
+  @media (max-height: 520px) and (min-width: 641px) { /* ---- celular horizontal ---- */
+    .title { top: 8px; left: calc(12px + env(safe-area-inset-left)); }
+    .title h1 { font-size: 16px; }
+    .title p { font-size: 9px; }
+    .title #progreso { font-size: 9.5px; margin-top: 2px; }
+    #recursos { top: 8px; right: calc(10px + env(safe-area-inset-right)); gap: 8px; padding: 5px 10px; font-size: 12px; }
+    #recursos .rec i { display: none; }
+    #mats { top: 54px; right: calc(10px + env(safe-area-inset-right)); padding: 4px 9px; font-size: 11px; }
+    #ideas { top: 64px; bottom: auto; left: calc(12px + env(safe-area-inset-left)); }
+    /* en columna, con más de seis ideas la fila se salía por abajo, sobre el dock: se acota y se desplaza con el dedo */
+    #ideas-fila { max-height: calc(100vh - 64px - var(--hud-abajo, 56px) - 24px); overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y; scrollbar-width: none; padding: 4px; margin: -4px; }
+    #ideas-fila::-webkit-scrollbar { display: none; }
+    .ideas-titulo { display: none; }
+    .medallon { width: 34px; height: 34px; }
+    #avisos { top: 54px; width: min(420px, 52vw); }
+    .toast, #alerta-valle, #offline { font-size: 11.5px; padding: 6px 9px; }
+    #consejo { top: auto; bottom: calc(var(--hud-abajo, 56px) + 16px); right: calc(10px + env(safe-area-inset-right)); width: min(360px, 42vw); padding: 7px 10px; gap: 8px; flex-direction: row; align-items: center; } /* ancha y baja: a 200 px los textos largos subían a cinco líneas y tapaban un tercio del mundo (F4 del QA general) */
+    #consejo canvas, #consejo img.cara3d { width: 34px !important; height: 34px !important; }
+    #consejo span { font-size: 11.5px; }
+    #abajo { left: calc(8px + env(safe-area-inset-left)); right: calc(8px + env(safe-area-inset-right)); bottom: 8px; gap: 6px; }
+    #dock { padding: 5px 7px; }
+    #panel { bottom: calc(var(--hud-abajo, 56px) + 12px); max-height: 72vh; overflow-y: auto; }
+    #victoria .caja, #visita .caja, #portada .caja, #gracias .caja, #otratab .caja { max-height: calc(100% - 16px); overflow: auto; padding: 14px 18px; }
+    #portada .marca { font-size: 28px; }
+  }
+
+/* F6 del QA general: con movimiento reducido en el sistema, sin animaciones ni transiciones de la interfaz */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

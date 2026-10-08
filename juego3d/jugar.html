@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#86bfe0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Lumbre 3D</title>
+<link rel="stylesheet" href="../juego/css/estilo.css">
+<style>
+  /* Lumbre 3D: el HUD es el del 2D; aquí solo se apilan los lienzos. El cielo es CSS (lo pinta juego3d.js). */
+  :root { --cielo-a: #86bfe0; --cielo-b: #f3dfb4; }
+  html, body { background: linear-gradient(180deg, var(--cielo-a), var(--cielo-b)); }
+  #estrellas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0; }
+  #mundo3d { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  #scene { position: fixed; inset: 0; z-index: 1; background: transparent; }
+  #hud { z-index: 2; }
+
+  /* ---------- LA INTERFAZ (src/ui3d.js): la del 2D con cuatro cambios sutiles ---------- */
+  #anclas { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+  #hud { z-index: 3; }
+  /* los rótulos: chips de vidrio, del mismo idioma que el dock (el dorado es de lo que se puede hacer) */
+  .ancla { position: absolute; left: 0; top: 0; width: max-content; pointer-events: none; white-space: nowrap;
+    font: 700 12.5px -apple-system, "Segoe UI", sans-serif; color: var(--texto);
+    background: var(--vidrio); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--linea); border-radius: 10px; padding: 5px 10px; box-shadow: 0 4px 14px rgba(30, 60, 90, .18); }
+  button.ancla { pointer-events: auto; cursor: pointer; width: max-content !important; margin: 0; min-height: 34px; padding: 0 12px;
+    border: 1px solid rgba(232, 165, 30, .85); background: rgba(253, 246, 228, .92); color: #3a3226;
+    box-shadow: 0 0 0 3px rgba(232, 165, 30, .16), 0 4px 14px rgba(30, 60, 90, .18); animation: convite 1.8s ease-in-out infinite; }
+  @keyframes convite { 50% { box-shadow: 0 0 0 6px rgba(232, 165, 30, .1), 0 4px 14px rgba(30, 60, 90, .18); } }
+  .ancla.progreso i { display: block; height: 5px; margin-top: 4px; border-radius: 3px; background: linear-gradient(90deg, #e4b04a var(--p), rgba(58, 50, 38, .15) var(--p)); }
+  .golpe { animation: golpe .45s ease-out; }
+  @keyframes golpe { 30% { transform: scale(1.3); } 100% { transform: scale(1); } }
+  /* las caras 3D: la consejera y las fichas de las personas */
+  #consejo img.cara3d { display: none; }
+  #consejo.con-cara3d canvas#consejo-cara { display: none; }
+  #consejo.con-cara3d img.cara3d { display: block; width: 46px; height: 46px; border-radius: 50%; flex: none; object-fit: cover; background: rgba(232, 165, 30, .16); }
+  #ficha .emoji.con-cara { background: rgba(232, 165, 30, .16); border-radius: 50%; padding: 0; overflow: hidden; }
+  #ficha img.cara3d-ficha { width: 38px; height: 38px; display: block; object-fit: cover; }
+  /* los avisos: se tocan para cerrarlos; en escritorio van a un lado (el centro es del mundo), en el celular uno a la vez */
+  body.ui-3d #toasts .toast { pointer-events: auto; cursor: pointer; }
+  @media (min-width: 641px) and (min-height: 521px) {
+    body.ui-3d #avisos { left: 96px; top: 108px; transform: none; width: min(340px, 30vw); }   /* al lado de «Las ideas», no encima: con tres pensadores la columna llega a ~290 px (F3 del QA general) */
+  }
+  @media (max-height: 520px) and (min-width: 641px) {   /* celular horizontal: el aviso, bajo la tercera línea del título (F4) */
+    body.ui-3d #avisos { top: 66px; }
+  }
+  @media (max-width: 640px), (max-height: 520px) {
+    body.ui-3d #toasts .toast:nth-child(n+2) { display: none; }
+    .ancla { font-size: 11.5px; }
+  }
+  /* los milenios que pasan (src/frontera.js): el título y los años que corren, sobre el cielo que gira */
+  #milenios { position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none; opacity: 0; text-align: center; color: #fff8e6; text-shadow: 0 2px 18px rgba(20, 30, 50, .55); }
+  #milenios .m-titulo { font: 800 clamp(24px, 4.2vw, 44px) "Avenir Next", "Nunito", "Segoe UI", sans-serif; }
+  #milenios .m-anio { font: 600 clamp(18px, 3vw, 30px) Georgia, "Times New Roman", serif; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  #l-apr.llena { color: #b0741a; }                    /* la memoria del clan, llena (C3) */
+  #b-mas { display: none; }
+  /* EL CELULAR VERTICAL (ui3d.js, 5): el aviso cabe en una línea (tocarlo lo abre entero) y el rincón se recoge
+     arriba a la derecha, a la altura de Las Ideas (×1 ×5 ⋯): el borde inferior pierde una fila y el mundo la gana. */
+  @media (max-width: 640px) and (orientation: portrait) {
+    body.ui-3d #toasts .toast:not(.abierta) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    body.ui-3d #dev { position: fixed; top: calc(112px + env(safe-area-inset-top)); right: 8px; z-index: 95; flex-wrap: wrap; justify-content: flex-end; max-width: 190px; gap: 5px; padding: 5px; border-radius: 12px; }
+    body.ui-3d #dev > :not([data-warp]):not(#b-mas) { display: none; }
+    body.ui-3d #dev.abierto > button:not(#importar-archivo) { display: inline-flex; align-items: center; justify-content: center; }
+    body.ui-3d #b-mas { display: inline-flex; align-items: center; justify-content: center; font-weight: 800; }
+    body.ui-3d #abajo .lado.der { display: contents; }
+    /* G4 del QA completo: el dock ocupaba tres filas (~350 px) y apretaba el mundo. En el celular se va «… por venir» (lo menos
+       urgente: el museo y la consejera ya anuncian lo que viene) y los chips ajustan su margen: cabe en dos filas */
+    body.ui-3d #chip-porvenir { display: none !important; }
+    body.ui-3d #dock .chip { padding-left: 8px; padding-right: 8px; font-size: 12.5px; }
+    body.ui-3d #dock { gap: 4px; }
+    /* el nombre de la época también en el celular (lista de cotejo F3): una línea chica bajo el progreso */
+    body.ui-3d .title #era-chip { display: block; position: fixed; top: calc(106px + env(safe-area-inset-top)); left: 11px; right: 11px; margin: 0;
+      font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    body.ui-3d #ideas { top: calc(126px + env(safe-area-inset-top)); }
+    body.ui-3d #dev { top: calc(126px + env(safe-area-inset-top)); }
+    body.ui-3d #avisos { top: calc(174px + env(safe-area-inset-top)); }
+  }
+  #cargando { position: fixed; inset: 0; display: grid; place-items: center; z-index: 5; color: #fff; font: 800 18px "Avenir Next", "Nunito", sans-serif; text-shadow: 0 2px 10px rgba(20, 60, 90, .4); pointer-events: none; transition: opacity .4s; }
+
+  /* ---------- LOS SECRETOS: la tarjeta del hallazgo ---------- */
+  #secreto { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 120; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(40, 32, 70, .45), rgba(10, 12, 30, .72)); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+  #secreto .caja { position: relative; max-width: 470px; width: calc(100% - 40px); max-height: calc(100% - 40px); overflow: auto; text-align: center; color: #3b2c18;
+    padding: 26px 34px 26px; border-radius: 6px;
+    background: radial-gradient(ellipse at 30% 20%, #fbf3dc 0%, #f1e2b9 55%, #e4cf98 100%);
+    box-shadow: 0 0 0 2px #b8862a, 0 0 0 6px #f3e3b4, 0 0 0 8px #9c6f1f, 0 30px 80px rgba(0, 0, 0, .6), 0 0 60px rgba(255, 210, 110, .25); }
+  #secreto .orla { position: absolute; inset: 10px; border: 1px solid rgba(156, 111, 31, .55); border-radius: 3px; pointer-events: none;
+    background: linear-gradient(115deg, transparent 40%, rgba(255, 246, 210, .55) 50%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 150% 0; }
+  #secreto .caja > :not(.orla) { position: relative; }   /* el brillo de la orla pasa por DETRÁS del texto */
+  #secreto .sello { position: relative; margin: 0 auto 12px; width: 64px; height: 64px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 30px; line-height: 1;
+    background: radial-gradient(circle at 35% 30%, #fff1b8, #e0ad3c 55%, #a8741a 100%); box-shadow: 0 0 0 3px #f3e3b4, 0 0 0 5px #9c6f1f, 0 8px 24px rgba(0, 0, 0, .45), 0 0 30px rgba(255, 210, 110, .6); }
+  #secreto .sup { font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.4px; text-transform: uppercase; color: #9c6f1f; margin-bottom: 10px; }
+  #secreto h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 26px; line-height: 1.15; margin: 0 0 12px; color: #2c2010; text-wrap: balance; }
+  #secreto p { font-family: Georgia, "Times New Roman", serif; font-size: 15px; line-height: 1.6; text-align: left; margin: 0 0 12px; }
+  #secreto .fuente { font-size: 12px; font-style: italic; color: #7a6040; text-align: left; border-top: 1px solid rgba(156, 111, 31, .35); padding-top: 8px; margin-bottom: 12px; }
+  #secreto .cuenta { font-size: 12.5px; color: #6b5233; margin-bottom: 14px; }
+  #secreto .cuenta .puntos { display: block; font-size: 15px; letter-spacing: 4px; color: #b8862a; margin-bottom: 2px; }
+  #secreto button { width: auto; padding: 10px 22px; background: linear-gradient(180deg, #3c3466, #2a2450); color: #ffe7a6; border: 1px solid #9c6f1f; font-weight: 700; }
+  #secreto button:hover { filter: brightness(1.15); }
+  #secreto.abre .caja { animation: secretoAbre .7s cubic-bezier(.2, .9, .3, 1.15) both; }
+  #secreto.abre .orla { animation: secretoBrillo 2.4s ease-out .5s both; }
+  #secreto.abre .sello { animation: secretoSello 1.1s ease-out .15s both; }
+  @keyframes secretoAbre { from { opacity: 0; transform: translateY(18px) scale(.92); } to { opacity: 1; transform: none; } }
+  @keyframes secretoBrillo { from { background-position: 150% 0; } to { background-position: -60% 0; } }
+  @keyframes secretoSello { 0% { transform: scale(.3) rotate(-40deg); opacity: 0; } 60% { transform: scale(1.12) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+  @media (prefers-reduced-motion: reduce) { #secreto.abre .caja, #secreto.abre .orla, #secreto.abre .sello { animation: none; } }
+  @media (max-width: 640px) { #secreto .caja { padding: 22px 22px 22px; } #secreto h2 { font-size: 22px; } #secreto p { font-size: 14px; } }
+  /* EL CATÁLOGO DE ALEJANDRÍA (los Pínakes): el rollo del muelle y sus cuatro estantes; táctil primero */
+  #catalogo { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(30, 40, 60, .32), rgba(10, 14, 28, .6)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #catalogo .caja { position: relative; max-width: 440px; width: calc(100% - 32px); text-align: center; color: #3b2c18; padding: 22px 24px 18px; border-radius: 8px;
+    background: linear-gradient(180deg, #f8efd8, #ecdcb4); box-shadow: 0 0 0 2px #b8862a, 0 0 0 5px #f3e3b4, 0 24px 60px rgba(0, 0, 0, .5); }
+  #catalogo .sup { font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #9c6f1f; }
+  #catalogo .rollo { margin: 12px auto 4px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  #catalogo .rollo i { display: block; width: 18px; height: 54px; border-radius: 9px; background: linear-gradient(90deg, #c9b183, #f3e7c8 45%, #c9b183); box-shadow: inset 0 0 0 1.5px #9c7a4a; }
+  #catalogo .rollo b { display: block; padding: 10px 16px; min-width: 52%; background: #f6ecd2; border-top: 1.5px solid #c4a978; border-bottom: 1.5px solid #c4a978;
+    font: 700 24px/1.1 Georgia, "Times New Roman", serif; color: #2c2010; }
+  #catalogo .pista { font: italic 15px/1.4 Georgia, "Times New Roman", serif; margin: 6px 0 2px; }
+  #catalogo .orig { font-size: 12px; color: #7a6040; margin-bottom: 12px; }
+  #catalogo #ca-estantes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #catalogo button.estante { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 58px; padding: 10px; border-radius: 6px;
+    background: linear-gradient(180deg, #8a5e34, #6f4826); color: #fbf0d6; border: 1px solid #4a3018; font: 700 16px/1 "Avenir Next", -apple-system, sans-serif;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 0 #3a2412; cursor: pointer; touch-action: manipulation; }
+  #catalogo button.estante .ico { font-size: 22px; }
+  #catalogo button.estante:hover:not(:disabled) { filter: brightness(1.12); }
+  #catalogo button.estante:disabled { opacity: .55; cursor: default; }
+  #catalogo button.estante.bien { opacity: 1; background: linear-gradient(180deg, #4f8a4a, #3a6c36); border-color: #24451f; }
+  #catalogo button.estante.mal { opacity: 1; background: linear-gradient(180deg, #a8483a, #86352a); border-color: #5a2018; }
+  #catalogo .cuenta { font-size: 12.5px; color: #6b5233; margin: 12px 0 8px; }
+  #catalogo #b-catalogo-cerrar { width: auto; padding: 7px 16px; background: transparent; color: #6b5233; border: 1px solid #b8a27a; font-weight: 600; }
+  /* TRADUCIR (Bagdad): la hoja de la mesa de los traductores, con el marco de lapislázuli y oro de los manuscritos abasíes */
+  #traducir { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(20, 34, 58, .34), rgba(8, 12, 26, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #traducir .caja { position: relative; max-width: 460px; width: calc(100% - 32px); text-align: center; color: #2e2416; padding: 22px 22px 16px; border-radius: 120px 120px 10px 10px / 60px 60px 10px 10px;
+    background: linear-gradient(180deg, #faf3df, #eedfba); box-shadow: 0 0 0 2px #c4952e, 0 0 0 6px #23497a, 0 0 0 8px #c4952e, 0 24px 60px rgba(0, 0, 0, .5); }
+  #traducir .sup { font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #9c6f1f; margin-top: 6px; }
+  #traducir .lengua { font: 600 12.5px/1.2 "Avenir Next", -apple-system, sans-serif; color: #23497a; margin: 12px 0 2px; }
+  #traducir .orig { font: 700 21px/1.25 Georgia, "Times New Roman", "Kohinoor Devanagari", "Noto Sans Devanagari", serif; color: #2c2010; padding: 8px 10px; margin: 2px auto; max-width: 92%;
+    background: #f6ecd2; border-top: 1.5px solid #c4a978; border-bottom: 1.5px solid #c4a978; overflow-wrap: anywhere; }
+  #traducir .obra { font: italic 15px/1.4 Georgia, "Times New Roman", serif; margin: 6px 0 0; }
+  #traducir .flecha { font: 16px/1 Georgia, serif; color: #b8862a; margin: 4px 0 0; }
+  #traducir .arabe { font: 600 26px/1.5 "Geeza Pro", "Noto Naskh Arabic", "Amiri", "Times New Roman", serif; color: #23497a; direction: rtl; margin: 0 0 12px; }
+  #traducir .metodos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #traducir .metodos button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 10px 8px; border-radius: 6px;
+    color: #fbf0d6; font: 700 16px/1.1 "Avenir Next", -apple-system, sans-serif; cursor: pointer; touch-action: manipulation; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 0 rgba(0,0,0,.35); }
+  #traducir .metodos button small { font: 500 12px/1.2 "Avenir Next", -apple-system, sans-serif; opacity: .9; }
+  #traducir #tr-literal { background: linear-gradient(180deg, #8a5e34, #6f4826); border: 1px solid #4a3018; }
+  #traducir #tr-sentido { background: linear-gradient(180deg, #2f5f94, #23497a); border: 1px solid #142c4c; }
+  #traducir .metodos button:hover:not(:disabled) { filter: brightness(1.12); }
+  #traducir .metodos button:disabled { opacity: .5; cursor: default; }
+  #traducir .cuenta { font-size: 12.5px; color: #6b5233; margin: 12px 0 8px; }
+  #traducir #b-traducir-cerrar { width: auto; padding: 7px 16px; background: transparent; color: #6b5233; border: 1px solid #b8a27a; font-weight: 600; border-radius: 6px; }
+  @media (max-width: 380px) { #traducir .metodos { grid-template-columns: 1fr; } #traducir .orig { font-size: 18px; } }
+  /* LA PROMESA (Tenochtitlan, el gesto): el recién nacido y las dos escuelas, en un pliego de amate con el borde rojo, turquesa y negro */
+  #promesa { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(28, 40, 34, .34), rgba(10, 14, 12, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #promesa .caja { position: relative; box-sizing: border-box; max-width: 460px; width: calc(100% - 32px); text-align: center; color: #2e2416; padding: 20px 22px 16px; border-radius: 10px;
+    background: linear-gradient(180deg, #f1e3c2, #dcc596); box-shadow: 0 0 0 2px #b5323a, 0 0 0 6px #2f8a7a, 0 0 0 8px #1e1610, 0 24px 60px rgba(0, 0, 0, .5); }
+  #promesa .caja::before, #promesa .caja::after { content: ''; position: absolute; left: 14px; right: 14px; height: 8px;
+    background: repeating-linear-gradient(90deg, #b5323a 0 10px, transparent 10px 14px, #2f8a7a 14px 24px, transparent 24px 28px); opacity: .55; }
+  #promesa .caja::before { top: 8px; } #promesa .caja::after { bottom: 8px; }
+  #promesa .sup { font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #8a4a1f; margin-top: 10px; }
+  #promesa .palabra { font: italic 14.5px/1.4 Georgia, "Times New Roman", serif; color: #5a3a1e; margin: 10px 0 4px; }
+  #promesa .nombre { font: 700 30px/1.2 Georgia, "Times New Roman", serif; color: #2c2010; margin: 2px 0 0; }
+  #promesa .quien { font: 500 12.5px/1.3 "Avenir Next", -apple-system, sans-serif; color: #6b5233; }
+  #promesa .signo { font: 500 13.5px/1.4 "Avenir Next", -apple-system, sans-serif; color: #2f6a5e; margin: 8px 0 12px; }
+  #promesa .escuelas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #promesa .escuelas button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 72px; padding: 10px 8px; border-radius: 6px;
+    color: #fff8ea; font: 700 15px/1.2 "Avenir Next", -apple-system, sans-serif; cursor: pointer; }
+  #promesa .escuelas button small { font: 500 11.5px/1.25 "Avenir Next", -apple-system, sans-serif; opacity: .92; }
+  #promesa #pr-telpo { background: linear-gradient(180deg, #6f7a3a, #55602a); border: 1px solid #3a4218; }
+  #promesa #pr-calme { background: linear-gradient(180deg, #a8323a, #7e2228); border: 1px solid #4a1418; }
+  #promesa .escuelas button:hover:not(:disabled) { filter: brightness(1.12); }
+  #promesa .escuelas button:disabled { opacity: .5; cursor: default; }
+  #promesa .cuenta { font-size: 12.5px; color: #6b5233; margin: 10px 0 8px; min-height: 1em; }
+  #promesa #b-promesa-cerrar { width: auto; padding: 7px 16px; background: transparent; color: #6b5233; border: 1px solid #b8a27a; font-weight: 600; border-radius: 6px; }
+  @media (max-width: 380px) { #promesa .escuelas { grid-template-columns: 1fr; } #promesa .nombre { font-size: 26px; } }
+  /* LAS TRES ESCUELAS (Roma, el gesto): el ludus, el grammaticus y el rétor, cada uno con sus alumnos y su avance, y la férula
+     o el juego por escuela, sobre una tablilla de cera enmarcada en madera, con el borde rojo pompeyano. Táctil primero: cada
+     alumno es un botón (tocarlo lo pasa); cabe en 390 px y nada baja de 36 px. */
+  #escuelas { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(40, 24, 18, .34), rgba(16, 10, 8, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #escuelas .caja { position: relative; box-sizing: border-box; max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #2a1c12; padding: 16px 16px 12px; border-radius: 8px;
+    background: linear-gradient(180deg, #f4ead2, #e6d6b2); box-shadow: 0 0 0 2px #8e2a1e, 0 0 0 7px #6a4a2e, 0 0 0 9px #3a2616, 0 24px 60px rgba(0, 0, 0, .5); }
+  #escuelas .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #8e2a1e; }
+  #escuelas h4 { text-align: center; margin: 6px 0 2px; font: 700 21px/1.2 Georgia, "Times New Roman", serif; color: #2a1c12; }
+  #escuelas .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #5a4028; margin-bottom: 4px; }
+  #escuelas .estado { text-align: center; font: 500 12.5px/1.4 "Avenir Next", -apple-system, sans-serif; color: #3a2a1c; margin-bottom: 8px; }
+  #escuelas .sala { border-radius: 6px; padding: 8px 8px 8px; margin: 0 0 8px; background: rgba(255, 252, 240, .55); border: 1px solid #c8a878; }
+  #escuelas .sala.cerrada { opacity: .6; }
+  #escuelas .sala header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  #escuelas .sala header .ic { font-size: 20px; line-height: 1; }
+  #escuelas .sala header .tit { flex: 1; min-width: 0; }
+  #escuelas .sala header b { display: block; font: 700 15px/1.2 Georgia, serif; }
+  #escuelas .sala header small { display: block; font: 500 10.5px/1.3 "Avenir Next", -apple-system, sans-serif; color: #5a4028; }
+  #escuelas .sala header .cupo { font: 700 12px/1 "Avenir Next", -apple-system, sans-serif; color: #6a4a2e; background: #efe0c0; border: 1px solid #c8a878; border-radius: 10px; padding: 4px 8px; white-space: nowrap; }
+  #escuelas .metodo { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  #escuelas .metodo button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 40px; padding: 4px 6px; border-radius: 5px; cursor: pointer;
+    background: #fbf6e8; color: #3a2a1c; border: 1px solid #c8a878; font: 600 12.5px/1.15 "Avenir Next", -apple-system, sans-serif; }
+  #escuelas .metodo button small { font-weight: 500; font-size: 10px; opacity: .8; }
+  #escuelas .metodo button.si[data-m="juego"] { background: #e2ecd2; border-color: #6a8a4a; box-shadow: inset 0 0 0 1px #6a8a4a; }
+  #escuelas .metodo button.si[data-m="ferula"] { background: #f2d8cc; border-color: #8e2a1e; box-shadow: inset 0 0 0 1px #8e2a1e; }
+  #escuelas .alumnos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 5px; }
+  #escuelas .alumnos .vacio { grid-column: 1 / -1; font: italic 12px/1.3 Georgia, serif; color: #6a5038; padding: 6px 2px; }
+  #escuelas .alumno { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 48px; padding: 5px 7px; border-radius: 5px; cursor: pointer; text-align: left;
+    background: #fffcf2; border: 1px solid #c8b08a; color: #2a1c12; }
+  #escuelas .alumno .nom { display: flex; justify-content: space-between; gap: 4px; font: 700 13px/1.2 Georgia, serif; }
+  #escuelas .alumno .nom i { font: 500 10.5px/1.2 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #6a5038; white-space: nowrap; }
+  #escuelas .alumno .barra { position: relative; height: 7px; border-radius: 4px; background: #e6d8bc; overflow: hidden; }
+  #escuelas .alumno .barra i { position: absolute; left: 0; top: 0; bottom: 0; background: #b08a4e; border-radius: 4px; }
+  #escuelas .alumno .barra em { position: absolute; top: 0; bottom: 0; left: 75%; width: 25%; background: rgba(90, 140, 70, .28); border-left: 1px solid rgba(60, 110, 50, .55); }
+  #escuelas .alumno small { font: 500 10.5px/1.25 "Avenir Next", -apple-system, sans-serif; color: #5a4028; }
+  #escuelas .alumno.medias .barra i { background: #c9a24a; }
+  #escuelas .alumno.listo { background: #eef6e2; border-color: #6a8a4a; }
+  #escuelas .alumno.listo .barra i { background: #5a8a3a; }
+  #escuelas .alumno.aburre { background: #f6e4dc; border-color: #b0644a; }
+  #escuelas .alumno.aburre .barra i { background: #b0644a; }
+  #escuelas .alumno:disabled { cursor: default; opacity: .72; }
+  #escuelas .alumno:hover:not(:disabled) { border-color: #8e2a1e; }
+  #escuelas #b-escuelas-listos { display: block; box-sizing: border-box; width: 100%; min-height: 44px; margin: 0 0 8px; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    background: #5a8a3a; color: #fbf6e8; border: 1px solid #3f6a2a; font: 600 14px/1.2 "Avenir Next", -apple-system, sans-serif; box-shadow: 0 2px 0 #3f6a2a; }
+  #escuelas #b-escuelas-listos b { font-weight: 800; }
+  #escuelas #b-escuelas-listos:hover:not(:disabled) { filter: brightness(1.08); }
+  #escuelas #b-escuelas-listos:disabled { background: #e6d8bc; color: #7a6248; border-color: #c8a878; box-shadow: none; cursor: default; font-weight: 500; }
+  #escuelas #b-escuelas-cerrar { display: block; margin: 8px auto 0; width: auto; min-height: 38px; padding: 7px 18px; background: transparent; color: #3a2a1c; border: 1px solid #a88a62; font-weight: 600; border-radius: 5px; }
+  @media (max-width: 400px) { #escuelas .caja { padding: 12px 9px 10px; } #escuelas h4 { font-size: 18px; } #escuelas .sala { padding: 7px 6px; } #escuelas .alumnos { gap: 4px; } #escuelas .alumno { padding: 4px 5px; } }
+  /* LOS CANDIDATOS (Kaifeng, el gesto): el reloj del examen, los que esperan con las tres maneras de prepararse (memoria,
+     asuntos, entender) y los que ya se preparan, sobre papel de arroz enmarcado en madera lacada, con el rojo bermellón de
+     los sellos. Táctil primero: cabe en 390 px y nada baja de 36 px. */
+  #examen { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(20, 18, 16, .34), rgba(8, 8, 8, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #examen .caja { position: relative; box-sizing: border-box; max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #1e1a16; padding: 16px 16px 12px; border-radius: 6px;
+    background: linear-gradient(180deg, #f7f2e6, #ece3cf); box-shadow: 0 0 0 2px #a8321f, 0 0 0 7px #3a1f18, 0 0 0 9px #1c0f0b, 0 24px 60px rgba(0, 0, 0, .5); }
+  #examen .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #a8321f; }
+  #examen h4 { text-align: center; margin: 6px 0 2px; font: 700 21px/1.2 Georgia, "Times New Roman", serif; color: #1e1a16; }
+  #examen .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #4a3e30; margin-bottom: 8px; }
+  #examen .reloj { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; padding: 7px 10px; margin-bottom: 6px; border-radius: 5px; background: #1e1a16; color: #f7f2e6;
+    font: 500 13px/1.25 "Avenir Next", -apple-system, sans-serif; }
+  #examen .reloj b { color: #f0c46a; }
+  #examen .reloj .barra { grid-column: 1 / -1; grid-row: 2; position: relative; height: 6px; border-radius: 3px; background: rgba(247, 242, 230, .2); overflow: hidden; }
+  #examen .reloj .barra i { position: absolute; left: 0; top: 0; bottom: 0; background: #c8432c; border-radius: 3px; }
+  #examen .reloj small { grid-row: 1; grid-column: 2; font-size: 11.5px; opacity: .85; white-space: nowrap; }
+  #examen .estado { text-align: center; font: 500 12px/1.4 "Avenir Next", -apple-system, sans-serif; color: #3a3026; margin-bottom: 8px; }
+  #examen h5 { margin: 8px 0 5px; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 1.6px; text-transform: uppercase; color: #6a5a46; }
+  #examen .cand { border-radius: 6px; padding: 7px 8px 8px; margin: 0 0 6px; background: rgba(255, 253, 246, .7); border: 1px solid #cdbb98; }
+  #examen .cand header { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+  #examen .cand header b { font: 700 15px/1.2 Georgia, serif; }
+  #examen .cand header i { font: 500 11px/1 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #8a6a2e; }
+  #examen .cand header em { margin-left: auto; font: 500 11px/1 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #5a6a3a; white-space: nowrap; }
+  #examen .modos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  #examen .modo { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 44px; padding: 4px 4px; border-radius: 5px; cursor: pointer; text-align: center;
+    background: #fffdf6; color: #1e1a16; border: 1px solid #c2ad86; font: 600 12.5px/1.15 "Avenir Next", -apple-system, sans-serif; }
+  #examen .modo small { margin-top: 2px; font-weight: 500; font-size: 10.5px; color: #5a4c3a; }
+  #examen .modo.ok small { color: #3f6a2a; font-weight: 700; }
+  #examen .modo.no small { color: #9a3a26; }
+  #examen .modo:hover:not(:disabled) { border-color: #a8321f; box-shadow: inset 0 0 0 1px #a8321f; }
+  #examen .modo:disabled { cursor: default; opacity: .5; }
+  #examen .prep { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px; }
+  #examen .vacio { grid-column: 1 / -1; font: italic 12px/1.3 Georgia, serif; color: #6a5a46; padding: 6px 2px; }
+  #examen .cand-p { display: flex; flex-direction: column; gap: 3px; min-height: 40px; padding: 5px 7px; border-radius: 5px; background: #fffdf6; border: 1px solid #d6c6a6; }
+  #examen .cand-p .nom { display: flex; justify-content: space-between; gap: 4px; font: 700 13px/1.2 Georgia, serif; }
+  #examen .cand-p .nom i { font: 500 10.5px/1.2 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #8a6a2e; white-space: nowrap; }
+  #examen .cand-p .barra { position: relative; height: 6px; border-radius: 3px; background: #e6dcc6; overflow: hidden; }
+  #examen .cand-p .barra i { position: absolute; left: 0; top: 0; bottom: 0; background: #8a6a3e; border-radius: 3px; }
+  #examen .cand-p small { font: 500 10.5px/1.25 "Avenir Next", -apple-system, sans-serif; color: #4a3e30; }
+  #examen .cand-p.listo { background: #eef4e2; border-color: #6a8a4a; }
+  #examen .cand-p.listo .barra i { background: #5a8a3a; }
+  #examen #b-examen-preparar { display: block; box-sizing: border-box; width: 100%; min-height: 44px; margin: 0 0 4px; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    background: #a8321f; color: #fbf6e8; border: 1px solid #7a2214; font: 600 14px/1.2 "Avenir Next", -apple-system, sans-serif; box-shadow: 0 2px 0 #7a2214; }
+  #examen #b-examen-preparar b { font-weight: 800; }
+  #examen #b-examen-preparar small { font-weight: 500; opacity: .85; font-size: 11.5px; }
+  #examen #b-examen-preparar:hover:not(:disabled) { filter: brightness(1.08); }
+  #examen #b-examen-preparar:disabled { background: #e6dcc6; color: #6a5a46; border-color: #cdbb98; box-shadow: none; cursor: default; font-weight: 500; }
+  #examen #b-examen-cerrar { display: block; margin: 8px auto 0; width: auto; min-height: 38px; padding: 7px 18px; background: transparent; color: #3a3026; border: 1px solid #a8926e; font-weight: 600; border-radius: 5px; }
+  @media (max-width: 400px) { #examen .caja { padding: 12px 9px 10px; } #examen h4 { font-size: 18px; } #examen .cand { padding: 6px 6px 7px; } #examen .modos { gap: 4px; } #examen .modo { font-size: 11.5px; padding: 4px 2px; } #examen .modo small { font-size: 10px; } #examen .prep { grid-template-columns: 1fr 1fr; } }
+  /* LOS QUE PREGUNTAN (el valle de hoy, el gesto, era21-plan): los que esperan con su pregunta (un dato o un porqué), con los
+     dos botones (que responda, que pregunte), los que caminan pensando y la revisión de las respuestas inventadas. Una hoja
+     de cuaderno de hoy, clara, con el azul frío de la chispa y el ámbar cálido de la atención. Táctil primero: cabe en
+     390 px y nada baja de 36 px. */
+  #pregunta { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(14, 26, 38, .32), rgba(6, 12, 20, .6)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #pregunta .caja { position: relative; box-sizing: border-box; max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #1d2630; padding: 16px 16px 12px; border-radius: 14px;
+    background: linear-gradient(180deg, #fbfcfd, #eef3f6); box-shadow: 0 0 0 1px #c9d6df, 0 24px 60px rgba(0, 0, 0, .45); }
+  #pregunta .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #2f7fb5; }
+  #pregunta h4 { text-align: center; margin: 6px 0 2px; font: 700 21px/1.2 "Avenir Next", -apple-system, sans-serif; color: #1d2630; }
+  #pregunta .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #4a5866; margin-bottom: 8px; }
+  #pregunta .estado { text-align: center; font: 500 12px/1.45 "Avenir Next", -apple-system, sans-serif; color: #33414e; margin-bottom: 8px; }
+  #pregunta h5 { margin: 8px 0 5px; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 1.6px; text-transform: uppercase; color: #5a6a78; }
+  #pregunta .duda { border-radius: 10px; padding: 8px 9px 9px; margin: 0 0 6px; background: #ffffff; border: 1px solid #d3dee6; }
+  #pregunta .duda header { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; }
+  #pregunta .duda header b { font: 700 15px/1.2 "Avenir Next", -apple-system, sans-serif; }
+  #pregunta .duda header em { font: 600 11px/1 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #6a5a2e; }
+  #pregunta .duda header i { margin-left: auto; font: 500 11px/1 "Avenir Next", -apple-system, sans-serif; font-style: normal; color: #2f7fb5; white-space: nowrap; }
+  #pregunta .duda q { display: block; margin: 0 0 7px; font: italic 14px/1.3 Georgia, serif; color: #2a3642; quotes: "«" "»"; }
+  #pregunta .modos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #pregunta .modo { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 46px; padding: 5px 6px; border-radius: 8px; cursor: pointer; text-align: center;
+    background: #f7fafc; color: #1d2630; border: 1px solid #c3d2dd; font: 600 13px/1.15 "Avenir Next", -apple-system, sans-serif; }
+  #pregunta .modo small { margin-top: 3px; font-weight: 500; font-size: 11px; color: #56636f; }
+  #pregunta .modo.ok { border-color: #2f7fb5; box-shadow: inset 0 0 0 1px #2f7fb5; background: #eef7fd; }
+  #pregunta .modo.ok small { color: #1f5f8f; font-weight: 700; }
+  #pregunta .modo:hover:not(:disabled) { border-color: #2f7fb5; }
+  #pregunta .modo:disabled { cursor: default; opacity: .5; }
+  #pregunta .prep { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 5px; }
+  #pregunta .vacio { grid-column: 1 / -1; font: italic 12px/1.35 Georgia, serif; color: #5a6a78; padding: 6px 2px; }
+  #pregunta .cand-p { display: flex; flex-direction: column; gap: 3px; min-height: 40px; padding: 6px 8px; border-radius: 8px; background: #ffffff; border: 1px solid #d3dee6; }
+  #pregunta .cand-p .nom { font: 700 13px/1.2 "Avenir Next", -apple-system, sans-serif; }
+  #pregunta .cand-p .barra { position: relative; height: 6px; border-radius: 3px; background: #dfe8ee; overflow: hidden; }
+  #pregunta .cand-p .barra i { position: absolute; left: 0; top: 0; bottom: 0; background: #4aa8ff; border-radius: 3px; }
+  #pregunta .cand-p small { font: italic 11px/1.25 Georgia, serif; color: #4a5866; }
+  #pregunta #b-pregunta-todos, #pregunta #b-pregunta-revisar { display: block; box-sizing: border-box; width: 100%; min-height: 44px; margin: 0 0 6px; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+    background: #2f7fb5; color: #f6fbff; border: 1px solid #1f5f8f; font: 600 14px/1.2 "Avenir Next", -apple-system, sans-serif; box-shadow: 0 2px 0 #1f5f8f; }
+  #pregunta #b-pregunta-revisar { background: #e3a23c; border-color: #b77a1e; box-shadow: 0 2px 0 #b77a1e; color: #2a1c06; }
+  #pregunta #b-pregunta-todos b { font-weight: 800; }
+  #pregunta #b-pregunta-todos small, #pregunta #b-pregunta-revisar small { font-weight: 500; opacity: .9; font-size: 11.5px; }
+  #pregunta #b-pregunta-todos:hover:not(:disabled), #pregunta #b-pregunta-revisar:hover:not(:disabled) { filter: brightness(1.06); }
+  #pregunta #b-pregunta-todos:disabled, #pregunta #b-pregunta-revisar:disabled { background: #dfe8ee; color: #56636f; border-color: #c3d2dd; box-shadow: none; cursor: default; font-weight: 500; }
+  #pregunta #b-pregunta-cerrar { display: block; margin: 8px auto 0; width: auto; min-height: 38px; padding: 7px 18px; background: transparent; color: #33414e; border: 1px solid #a9bac6; font-weight: 600; border-radius: 8px; }
+  @media (max-width: 400px) { #pregunta .caja { padding: 12px 9px 10px; } #pregunta h4 { font-size: 18px; } #pregunta .duda { padding: 7px 7px 8px; } #pregunta .modo { font-size: 12px; padding: 4px 3px; } #pregunta .modo small { font-size: 10.5px; } #pregunta .prep { grid-template-columns: 1fr 1fr; } }
+  /* EL MAPA (Santiago, el gesto): los pueblos del país de norte a sur, sobre una hoja de cuaderno escolar (papel cuadriculado, tinta azul, la franja del país) */
+  #mapa { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(22, 30, 40, .34), rgba(8, 12, 18, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #mapa .caja { position: relative; box-sizing: border-box; max-width: 560px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #1e2a3a; padding: 18px 18px 14px 46px; border-radius: 6px;
+    background-color: #fbfaf4; background-image: linear-gradient(rgba(80,120,180,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(80,120,180,.12) 1px, transparent 1px); background-size: 14px 14px;
+    box-shadow: 0 0 0 1px #c8ccd4, 0 0 0 5px #2a4a6a, 0 24px 60px rgba(0, 0, 0, .5); }
+  #mapa .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #a8261e; }
+  #mapa h4 { text-align: center; margin: 6px 0 2px; font: 700 22px/1.2 Georgia, "Times New Roman", serif; color: #1e2a3a; }
+  #mapa .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #3a4a5e; margin-bottom: 4px; }
+  #mapa .estado { text-align: center; font: 500 12.5px/1.4 "Avenir Next", -apple-system, sans-serif; color: #2a3a4e; margin-bottom: 10px; }
+  #mapa .franja { position: absolute; left: 16px; top: 18px; bottom: 18px; width: 14px; border-radius: 7px; background: linear-gradient(180deg, #d8c08a, #b8c87a 40%, #6f9a5a 75%, #4f7a5a); box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  #mapa .franja i { position: absolute; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fbfaf4; box-shadow: 0 0 0 1px #2a4a6a; transform: translateY(-50%); }
+  #mapa .franja i.si { background: #2a6a4a; } #mapa .franja i.va { background: #e8a83a; }
+  #mapa .pueblos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  #mapa .pueblos button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border-radius: 5px; min-height: 64px;
+    background: #fffef8; border: 1px solid #b8c4d4; color: #1e2a3a; cursor: pointer; text-align: left; }
+  #mapa .pueblos button .ic { font-size: 16px; line-height: 1; }
+  #mapa .pueblos button b { font: 700 14px/1.2 Georgia, serif; }
+  #mapa .pueblos button small { font: 500 10.5px/1.3 "Avenir Next", -apple-system, sans-serif; color: #3a4a5e; }
+  #mapa .pueblos button small.es { color: #5a6a7e; font-style: italic; }
+  #mapa .pueblos button.abierta { background: #eef6ee; border-color: #8ab49a; }
+  #mapa .pueblos button:disabled { opacity: .55; cursor: default; }
+  #mapa .pueblos button:hover:not(:disabled) { border-color: #a8261e; }
+  #mapa #b-mapa-cerrar { display: block; margin: 12px auto 0; width: auto; padding: 7px 18px; background: transparent; color: #2a3a4e; border: 1px solid #9aa8bc; font-weight: 600; border-radius: 5px; }
+  @media (max-width: 400px) { #mapa .caja { padding: 14px 10px 12px 34px; } #mapa .franja { left: 10px; width: 12px; } #mapa .pueblos { gap: 5px; } #mapa .pueblos button { padding: 6px 7px; } #mapa h4 { font-size: 19px; } }
+  /* COMPONER (Ámsterdam, el gesto): las obras que se pueden imprimir, sobre un pliego recién tirado (papel claro, tinta negra, la marca roja del impresor) */
+  #componer { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(24, 28, 34, .34), rgba(8, 10, 14, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #componer .caja { position: relative; box-sizing: border-box; max-width: 500px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #1e1a16; padding: 18px 18px 14px; border-radius: 4px;
+    background: linear-gradient(180deg, #f8f4ea, #ece4d2); box-shadow: 0 0 0 1px #c9bca0, 0 0 0 5px #2a2622, 0 24px 60px rgba(0, 0, 0, .5); }
+  #componer .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #9a2a1e; }
+  #componer h4 { text-align: center; margin: 6px 0 2px; font: 700 23px/1.2 Georgia, "Times New Roman", serif; color: #1e1a16; letter-spacing: .5px; }
+  #componer .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #4a4236; margin-bottom: 4px; }
+  #componer .estado { text-align: center; font: 500 12.5px/1.4 "Avenir Next", -apple-system, sans-serif; color: #3a342a; margin-bottom: 10px; }
+  #componer .obras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #componer .obras button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 8px 8px; border-radius: 4px; min-height: 120px;
+    background: #fffdf6; border: 1px solid #c9bca0; color: #1e1a16; cursor: pointer; text-align: center; }
+  #componer .obras button .ic { font-size: 24px; line-height: 1; }
+  #componer .obras button b { font: 700 15px/1.2 Georgia, serif; }
+  #componer .obras button small { font: 500 11px/1.3 "Avenir Next", -apple-system, sans-serif; color: #4a4236; }
+  #componer .obras button .dem { display: block; width: 80%; height: 5px; border-radius: 3px; background: #e2d8c0; overflow: hidden; margin-top: 2px; }
+  #componer .obras button .dem i { display: block; height: 100%; background: linear-gradient(90deg, #9a2a1e, #c9862a); }
+  #componer .obras button .dt { font-size: 10.5px; }
+  #componer .obras button.si { background: #2a2622; color: #f4ecd8; border-color: #1a1612; }
+  #componer .obras button.si small { color: #d8ccb2; }
+  #componer .obras button:disabled:not(.si) { opacity: .45; cursor: default; }
+  #componer .obras button:hover:not(:disabled) { border-color: #9a2a1e; }
+  #componer #b-componer-cerrar { display: block; margin: 12px auto 0; width: auto; padding: 7px 18px; background: transparent; color: #3a342a; border: 1px solid #b8a27a; font-weight: 600; border-radius: 4px; }
+  @media (max-width: 400px) { #componer .caja { padding: 14px 10px 12px; } #componer .obras { gap: 6px; } #componer .obras button { min-height: 110px; padding: 8px 5px; } #componer h4 { font-size: 20px; } }
+  /* EL HORARIO (París, el gesto): la campana y los cuatro tiempos del día, en una hoja de libro de horas (pergamino, orla azul y oro, inicial roja) */
+  #horario { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 118; pointer-events: auto;
+    background: radial-gradient(ellipse at 50% 45%, rgba(20, 26, 44, .34), rgba(8, 10, 20, .62)); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  #horario .caja { position: relative; box-sizing: border-box; max-width: 480px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow-y: auto; color: #2b2418; padding: 18px 18px 14px; border-radius: 8px;
+    background: linear-gradient(180deg, #f5ecd6, #e4d5b0); box-shadow: 0 0 0 2px #b8902a, 0 0 0 6px #23407a, 0 0 0 8px #15182a, 0 24px 60px rgba(0, 0, 0, .5); }
+  #horario .sup { text-align: center; font: 700 11px/1 "Avenir Next", -apple-system, sans-serif; letter-spacing: 2.2px; text-transform: uppercase; color: #23407a; }
+  #horario h4 { text-align: center; margin: 6px 0 2px; font: 700 22px/1.2 Georgia, "Times New Roman", serif; color: #2b2418; }
+  #horario h4::first-letter { color: #a8261e; font-size: 1.35em; }
+  #horario .lema { text-align: center; font: italic 13px/1.35 Georgia, serif; color: #5a4a2e; margin-bottom: 10px; }
+  #horario .ho-fila { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; padding: 6px 6px; border-radius: 6px; }
+  #horario .ho-fila.ahora { background: rgba(184, 144, 42, .18); box-shadow: inset 0 0 0 1px rgba(184, 144, 42, .55); }
+  #horario .ho-t { font: 500 13px/1.2 "Avenir Next", -apple-system, sans-serif; color: #2b2418; }
+  #horario .ho-t b { display: block; font: 700 14px/1.2 Georgia, serif; }
+  #horario .ho-t small { color: #7a6440; font-size: 11px; }
+  #horario .ho-b { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  #horario .ho-b button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; padding: 4px 2px; border-radius: 6px;
+    background: #fbf5e6; border: 1px solid #c9b483; color: #3a2e1a; font-size: 19px; cursor: pointer; }
+  #horario .ho-b button span { font: 600 11px/1 "Avenir Next", -apple-system, sans-serif; }
+  #horario .ho-b button.si { background: linear-gradient(180deg, #2f5296, #23407a); border-color: #15284f; color: #f7efd8; box-shadow: 0 0 0 1px #b8902a; }
+  #horario .ho-b button:disabled { opacity: .38; cursor: default; }
+  #horario .ideas { font: 500 12px/1.45 "Avenir Next", -apple-system, sans-serif; color: #4a3c22; margin: 10px 4px 10px; padding-top: 8px; border-top: 1px solid #c9b483; }
+  #horario #b-horario-cerrar { display: block; margin: 0 auto; width: auto; padding: 7px 18px; background: transparent; color: #4a3c22; border: 1px solid #b8a27a; font-weight: 600; border-radius: 6px; }
+  #horario .ho-b button { min-width: 0; }
+  @media (max-width: 400px) { #horario .caja { padding: 14px 10px 12px; } #horario .ho-fila { grid-template-columns: 1fr; gap: 4px; padding: 4px 2px; } #horario .ho-b { gap: 4px; } #horario .ho-b button span { font-size: 10px; } #horario .ho-t b { display: inline; } #horario h4 { font-size: 19px; } }
+  #catalogo.abre .caja { animation: secretoAbre .45s cubic-bezier(.2, .9, .3, 1.15) both; }
+  @media (prefers-reduced-motion: reduce) { #catalogo.abre .caja { animation: none; } }
+  /* el gabinete del museo */
+  .sala.gabinete { color: #6a4f9a; }
+  #panel .pieza.secreto { background: linear-gradient(160deg, rgba(243, 227, 180, .55), rgba(228, 207, 152, .35)); border-left: 3px solid #b8862a;
+    padding: 9px 12px 10px; margin-bottom: 6px; border-bottom: none; border-radius: 0 6px 6px 0; }
+  #panel .pieza.secreto .fuente { font-size: 11.5px; font-style: italic; opacity: .8; margin-top: 4px; }
+  #panel .pieza.secreto.falta { opacity: .6; border-left-color: #9c8f7a; background: transparent; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="estrellas"></canvas>
+<canvas id="mundo3d"></canvas>
+<canvas id="scene"></canvas>
+<div id="ficha"></div>
+<div id="hud">
+  <div class="title"><h1>Lumbre</h1><p id="era-chip">Era 1 · La era de la tiza · 1920</p><p id="progreso"></p></div>
+  <div id="ideas" class="clic" style="display:none">
+    <span class="ideas-titulo">Las Ideas</span>
+    <div id="ideas-fila"></div>
+  </div>
+  <div id="recursos" class="clic">
+    <span class="rec"><span class="num">📖 <b id="r-apr">0</b> <i>· <span id="r-tasa">0</span>/s <span id="r-comp"></span></i></span><label id="l-apr">Saber</label></span>
+    <span class="sep"></span>
+    <span class="rec"><span class="num"><span id="ico-pre">🧺</span> <b id="r-pre">0</b></span><label id="l-pre">Recursos</label></span>
+    <span class="sep"></span>
+    <span class="rec"><span class="num">⭐ <b id="r-rep">0</b></span><label id="l-rep">Renombre</label></span>
+    <span class="sep"></span>
+    <span class="rec"><span class="num">🧒 <b id="r-alu">4</b></span><label id="l-alu">Aprendices</label></span>
+    <span class="sep"></span>
+    <span class="rec"><span class="num">☕ <b id="r-ani">90</b></span><label id="l-ani">Ánimo</label></span>
+  </div>
+  <div id="hudinfo"></div>
+  <div id="mats" class="clic"></div>
+  <div id="avisos">
+    <div id="offline" class="clic"></div>
+    <div id="alerta-valle"></div>
+    <div id="toasts"></div>
+  </div>
+  <div id="panel" class="clic"></div>
+  <!-- EL BORDE INFERIOR ES UNA SOLA FILA FLEX: el dock al centro y los controles a la derecha.
+       Antes eran dos absolutos repartiéndose el borde con una reserva fija en px, y cada vez que el
+       rincón crecía (pasó con 💾/📥) volvían a pisarse. En flex es imposible: los laterales ceden,
+       el dock se corre y, si aun así no cabe, envuelve dentro de sí mismo. -->
+  <div id="abajo">
+    <div class="lado"></div>
+    <div id="dock" class="clic"></div>
+    <div class="lado der"><div id="dev" class="clic">
+      <button id="b-ayuda" title="La portada: qué es Lumbre y cómo se juega.">?</button>
+      <button id="b-home" title="Volver al encuadre: centra el mundo entero. Úsalo si te pierdes paneando o con el zoom.">⌂</button>
+      <button id="b-mute" title="Silenciar o devolver el sonido: el crepitar del fuego, la caza, las historias.">🔊</button>
+      <button data-warp="1" class="on" title="Ritmo normal: el tiempo del clan corre como el tuyo.">×1</button>
+      <button data-warp="5" title="Cinco veces más rápido. Todo se acelera: la economía, el día y la noche, el año y los personajes. Para ver crecer lo que tarda.">×5</button>
+      <button id="b-exportar" title="Llevarte la partida: descarga un archivo con todo tu progreso. Sirve para cambiar de máquina o de navegador, o como respaldo.">💾</button>
+      <button id="b-importar" title="Traer una partida: abre un archivo guardado con 💾 y continúa donde ibas. La partida actual queda respaldada por si acaso.">📥</button>
+      <input type="file" id="importar-archivo" accept=".json,application/json" style="display:none">
+      <button id="b-reset" title="Empezar de cero. Pide confirmación: hay que pulsarlo dos veces.">reiniciar</button>
+    </div></div>
+  </div>
+  <div id="consejo" class="clic"><canvas id="consejo-cara" width="92" height="92"></canvas><div><b id="consejo-firma"></b><span id="consejo-txt"></span></div></div>
+  <div id="otratab">
+    <div class="caja clic">
+      <h2>🕯️ La partida siguió en otra pestaña</h2>
+      <p>Abriste Lumbre en otra pestaña, y dos a la vez se pisan el progreso. <b>Esta se quedó quieta</b>
+      para no estropear nada: el clan sigue su vida en la otra.</p>
+      <button id="b-retomar">Seguir jugando aquí</button>
+    </div>
+  </div>
+  <div id="victoria">
+    <div class="caja clic">
+      <h2>🏆 Era 1 dominada</h2>
+      <p id="v-texto"></p>
+      <button id="b-seguir" style="width:auto;padding:8px 18px">Seguir contemplando</button>
+    </div>
+  </div>
+  <!-- LA PORTADA (2026-09-07): la bienvenida del demo. Se abre sola en la primera partida y desde el botón «?». -->
+  <div id="portada">
+    <div class="caja clic">
+      <div class="marca">Lumbre</div>
+      <div class="lema">Los grandes hitos de la educación a través del tiempo</div>
+      <p>Este es un <b>demo</b> creado para mostrar las <b>infinitas posibilidades de la didáctica dentro del aula</b>.
+      Recorre cómo la humanidad aprendió a enseñar, empezando por el principio: el fogón paleolítico y la primera aldea.
+      Esta es la <b>versión en 3D</b>: doce épocas, del fogón paleolítico a una era de aprendizaje que todavía no conocemos. Cada mecánica es una lección, y cada lección tiene su fuente.</p>
+      <p>Es un demo y <b>seguimos trabajando en su desarrollo</b>. Cualquier cosa, escríbeme a <b>invoco@luislastra.cl</b>.</p>
+      <h3>Cómo se juega</h3>
+      <ol>
+        <li><b>Toca el mundo.</b> Todo tiene su ficha, y muchas cosas se pueden usar: el anillo dorado y los rótulos te señalan qué toca ahora.</li>
+        <li><b>Recoge lo que aparece</b> (materiales y chispas de curiosidad) antes de que se apague.</li>
+        <li><b>Crea los saberes de la época</b> en el dock, con saber y recursos. Cuando la novedad pase y un saber junte polvo, <b>enséñaselo a quienes enseñan</b> (en la Época 1, «Encender el saber») para que rinda de verdad.</li>
+        <li><b>Recibe a los pensadores</b> que llegan de visita: cada uno cambia una regla del juego para siempre.</li>
+        <li>Con los saberes del fogón aprendidos y las tres historias de la Abuela escuchadas nace <b>la aldea</b>; con los de la aldea, <b>la época se cierra</b>, y los Milenios llevan río abajo, a <b>Sumer</b>; de la edubba, los Siglos llevan al Nilo, a <b>Egipto</b>; de la Casa de la Vida, el mar lleva a <b>Atenas</b>, al ágora donde se pregunta; del ágora, los barcos llevan a <b>Alejandría</b>, a la Biblioteca donde se ordena todo lo escrito; de la Biblioteca, a <b>Roma</b>, donde la escuela se escalona en tres; de Roma, siete siglos después, a <b>Bagdad</b>, donde se traduce todo al árabe; de Bagdad, por la Ruta de la Seda, a <b>Kaifeng</b>, donde se inventa el examen; en los mismos años, al otro extremo de la Ruta, a <b>París</b>, donde la campana pone horario y nace la universidad; de París, tres siglos después y al otro lado del océano, a <b>Tenochtitlan</b>, donde todos los niños van a la escuela; y de ahí a <b>Ámsterdam</b>, donde la imprenta multiplica los libros y Comenio pide enseñar todo a todos; y de ahí, casi cuatro siglos después, de vuelta al <b>valle del principio</b>, hoy, donde una inteligencia artificial responde o pregunta.</li>
+        <li>Nada se pierde: la partida se guarda sola, así que se puede jugar por partes. Entera dura cerca de <b>tres horas y media</b> a velocidad normal (unos 20 minutos por época), y <b>×5</b> acelera el tiempo cuando quieras ver crecer lo que tarda.</li>
+      </ol>
+      <div class="credito">Una idea de <b>Luis Lastra</b>, desarrollada con Claude · Lumbre 3D, del fogón al futuro</div>
+      <button id="b-empezar">Empezar</button>
+    </div>
+  </div>
+  <!-- EL AGRADECIMIENTO, que en el 3D es LA LLEGADA a la época que todavía no tiene mundo (src/frontera.js llena
+       el título, el cuerpo y el botón; los comentarios salen de CONTACTO_COMENTARIOS, como en el 2D). -->
+  <div id="gracias">
+    <div class="caja clic">
+      <h2>🙏 Gracias por probar el demo</h2>
+      <div id="gracias-cuerpo"><p>Llegaste hasta el final de lo construido: el fogón, Sumer, Egipto, Atenas, Alejandría, Roma, Bagdad, Kaifeng, París, Tenochtitlan, Ámsterdam y el valle de hoy. Este demo nace para mostrar que un juego
+      puede abrir <b>infinitas posibilidades de didáctica dentro del aula</b>, y tu partida es la mejor prueba de que
+      se puede jugar entero.</p>
+      <p>Es un demo y seguimos trabajando en su desarrollo. Cualquier cosa, puedes comunicarte conmigo.</p></div>
+      <div class="firma">Luis Lastra</div>
+      <div class="credito">Lumbre es una idea de Luis Lastra, desarrollada con Claude.</div>
+      <div class="botones">
+        <a id="b-comentar" class="boton" target="_blank" rel="noopener" style="display:none">✉️ Escribirme</a>
+        <button id="b-gracias-cerrar">Seguir contemplando</button>
+      </div>
+      <div id="gracias-direccion" class="direccion" style="display:none"></div>
+    </div>
+  </div>
+  <div id="visita">
+    <div class="caja clic">
+      <h2 id="vi-titulo">🎩 Una visita al aula</h2>
+      <p id="vi-texto"></p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button id="b-adoptar" style="width:auto;padding:8px 18px"></button>
+        <button id="b-luego" style="width:auto;padding:8px 18px">Ahora no</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOS SECRETOS (docs/secretos-plan.md): la tarjeta del hallazgo, un pergamino con borde de oro -->
+<div id="catalogo" role="dialog" aria-modal="true" aria-labelledby="ca-autor"><div class="caja">
+  <div class="sup">Los Pínakes de Calímaco · ¿en qué estante va?</div>
+  <div class="rollo"><i></i><b id="ca-autor"></b><i></i></div>
+  <div class="pista" id="ca-pista"></div>
+  <div class="orig">trae <span id="ca-original"></span></div>
+  <div id="ca-estantes"></div>
+  <div class="cuenta" id="ca-cuenta"></div>
+  <button id="b-catalogo-cerrar">Ahora no</button>
+</div></div>
+<div id="traducir" role="dialog" aria-modal="true" aria-labelledby="tr-obra"><div class="caja">
+  <div class="sup">La mesa de los traductores · ¿cómo se traduce?</div>
+  <div class="lengua" id="tr-lengua"></div>
+  <div class="orig" id="tr-original"></div>
+  <div class="obra" id="tr-obra"></div>
+  <div class="flecha">↓</div>
+  <div class="arabe" id="tr-arabe" lang="ar"></div>
+  <div class="metodos"><button id="tr-literal"></button><button id="tr-sentido"></button></div>
+  <div class="cuenta" id="tr-mesa"></div>
+  <button id="b-traducir-cerrar">Ahora no</button>
+</div></div>
+<div id="promesa" role="dialog" aria-modal="true" aria-labelledby="pr-nombre"><div class="caja">
+  <div class="sup">La casa de la partera · ¿a qué escuela?</div>
+  <div class="palabra" id="pr-palabra"></div>
+  <div class="nombre" id="pr-nombre"></div>
+  <div class="quien" id="pr-quien"></div>
+  <div class="signo" id="pr-signo"></div>
+  <div class="escuelas"><button id="pr-telpo"></button><button id="pr-calme"></button></div>
+  <div class="cuenta" id="pr-cola"></div>
+  <button id="b-promesa-cerrar">Ahora no</button>
+</div></div>
+<div id="escuelas" role="dialog" aria-modal="true" aria-labelledby="es-titulo"><div class="caja">
+  <div class="sup">Las tres escuelas de Roma</div>
+  <h4 id="es-titulo">¿Quién pasa a la escuela siguiente?</h4>
+  <div class="lema">A tiempo rinde; apurado llega a medias; retenido, se aburre.</div>
+  <div class="estado" id="es-estado"></div>
+  <button id="b-escuelas-listos" type="button"></button>
+  <div id="es-salas"></div>
+  <button id="b-escuelas-cerrar">Listo</button>
+</div></div>
+<div id="pregunta" role="dialog" aria-modal="true" aria-labelledby="pq-titulo"><div class="caja">
+  <div class="sup">La escuela del valle · hoy</div>
+  <h4 id="pq-titulo">¿Cómo los ayuda la IA?</h4>
+  <div class="lema">Que responda es al instante; el que pregunta tarda, y entiende. Para un dato, basta buscarlo.</div>
+  <div class="estado" id="pq-estado"></div>
+  <button id="b-pregunta-todos" type="button"></button>
+  <button id="b-pregunta-revisar" type="button"></button>
+  <div id="pq-lista"></div>
+  <button id="b-pregunta-cerrar">Listo</button>
+</div></div>
+<div id="examen" role="dialog" aria-modal="true" aria-labelledby="ex-titulo"><div class="caja">
+  <div class="sup">La escuela de la prefectura · Kaifeng</div>
+  <h4 id="ex-titulo">¿Cómo se prepara cada candidato?</h4>
+  <div class="lema">De memoria se aprueba más; el que entiende gobierna mejor. Y el que reprueba, enseña.</div>
+  <div class="reloj" id="ex-reloj"></div>
+  <div class="estado" id="ex-estado"></div>
+  <button id="b-examen-preparar" type="button"></button>
+  <div id="ex-lista"></div>
+  <button id="b-examen-cerrar">Listo</button>
+</div></div>
+<div id="mapa" role="dialog" aria-modal="true" aria-labelledby="ma-titulo"><div class="caja">
+  <div class="franja" id="ma-franja"></div>
+  <div class="sup">La Escuela Normal de Preceptores</div>
+  <h4 id="ma-titulo">¿Adónde va el normalista?</h4>
+  <div class="lema">Cerca abre rápido; grande y lejos rinde más, pero tarda.</div>
+  <div class="estado" id="ma-estado"></div>
+  <div class="pueblos" id="ma-pueblos"></div>
+  <button id="b-mapa-cerrar">Listo</button>
+</div></div>
+<div id="componer" role="dialog" aria-modal="true" aria-labelledby="co-titulo"><div class="caja">
+  <div class="sup">La imprenta del Bloemgracht</div>
+  <h4 id="co-titulo">¿Qué se compone?</h4>
+  <div class="lema">Componer tarda; una vez armada la forma, cada tirada sale sola.</div>
+  <div class="estado" id="co-estado"></div>
+  <div class="obras" id="co-obras"></div>
+  <button id="b-componer-cerrar">Listo</button>
+</div></div>
+<div id="horario" role="dialog" aria-modal="true" aria-labelledby="ho-titulo"><div class="caja">
+  <div class="sup">El campanario de San Víctor</div>
+  <h4 id="ho-titulo">El horario</h4>
+  <div class="lema">La campana parte el día: ¿qué se hace en cada tiempo?</div>
+  <div id="ho-filas"></div>
+  <div class="ideas" id="ho-ideas"></div>
+  <button id="b-horario-cerrar">Listo</button>
+</div></div>
+<div id="secreto" role="dialog" aria-modal="true" aria-labelledby="se-titulo">
+  <div class="caja">
+    <div class="orla"></div>
+    <div id="se-sello" class="sello" aria-hidden="true"></div>
+    <div class="sup">Lo que se enseñaba en secreto</div>
+    <h2 id="se-titulo"></h2>
+    <p id="se-texto"></p>
+    <div id="se-fuente" class="fuente"></div>
+    <div id="se-cuenta" class="cuenta"></div>
+    <button id="b-secreto">Guardarlo en el gabinete</button>
+  </div>
+</div>
+<div id="cargando">Encendiendo el fogón…</div>
+
+<!-- EL MOTOR. El juego es el del 2D (../juego/src), cargado tal cual y en su orden. Lumbre 3D solo le pasa su
+     configuración (window.LUMBRE, leída por el motor: su propia partida, su frontera, sin suelo 2D) y dibuja el
+     cuadro con LUMBRE.dibujar (src/juego3d.js), que comparte con el 2D el paso del cuadro (avanzarCuadro). -->
+<script>
+window.LUMBRE = { saveKey: 'lumbre3d-save', ultimaEpoca: 21, sinTerreno: true, dibujar: () => {} };   // ultimaEpoca 21: el juego termina en el valle de hoy, la pregunta abierta (era21-plan, 2026-10-07); antes, en Ámsterdam (9)
+</script>
+<script src="../juego/src/01-balance.js"></script>
+<script src="../juego/src/02-dibujo.js"></script>
+<script src="../juego/src/03-terreno.js"></script>
+<script src="../juego/src/04-props.js"></script>
+<script src="../juego/src/05-mamut-fogon.js"></script>
+<script src="../juego/src/06-gente.js"></script>
+<script src="../juego/src/07-sumer.js"></script>
+<script src="../juego/src/08-transiciones.js"></script>
+<script src="../juego/src/09-egipto.js"></script>
+<script src="../juego/src/09b-agora.js"></script>
+<script src="../juego/src/09c-alejandria.js"></script>
+<script src="../juego/src/09d-bagdad.js"></script>
+<script src="../juego/src/09e-tenochtitlan.js"></script>
+<script src="../juego/src/09f-paris.js"></script>
+<script src="../juego/src/09g-amsterdam.js"></script>
+<script src="../juego/src/09h-santiago.js"></script>
+<script src="../juego/src/09i-roma.js"></script>
+<script src="../juego/src/09j-kaifeng.js"></script>
+<script src="../juego/src/09k-futuro.js"></script>
+<script src="../juego/src/10-recorridos.js"></script>
+<script src="../juego/src/11-materiales.js"></script>
+<script src="../juego/src/12-fichas.js"></script>
+<script src="../juego/src/13-audio.js"></script>
+<script src="../juego/src/14-reglas.js"></script>
+<script src="../juego/src/15-economia.js"></script>
+<script src="../juego/src/16-interfaz.js"></script>
+<script src="../juego/src/17-guardado.js"></script>
+<script src="../juego/src/18-fx.js"></script>
+<script src="../juego/src/19-render.js"></script>
+<script src="../juego/src/20-main.js"></script>
+<script type="module" src="src/juego3d.js"></script>
+</body>
+</html>
