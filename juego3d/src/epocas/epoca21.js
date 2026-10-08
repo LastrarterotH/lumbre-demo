@@ -26,6 +26,7 @@ import * as L from '../futuro/lugares.js';
 import { conActores } from '../piezas.js';
 import { fase, tiene, niv, llave } from '../motor3d.js';
 import * as SE from '../secretos.js';
+import { INVITADOS, fiestaActiva, fiestaRecien, seguirFiesta } from '../fiesta.js';
 
 /* ---------- dónde está cada cosa ---------- */
 const PIEZA = id => PZ.PIEZAS.find(p => p.id === id);
@@ -108,6 +109,7 @@ export default {
     { const cp = K.malla(K.caja(0.1, 0.13, 0.015), '#e8e2d2', { grosor: 0.0015 }); bloom.sostener?.(cp, 'I'); }   // la carpeta de los gráficos
     const abuela = persona({ ...OP_ABUELA }, { pose: 'narrarSentada', asiento: 0.2 });
     const aldeanos = mo.paseantes(10, { opciones: i => gente(i + 5), inicio: i => ({ x: 10.5 + (i % 4) * 0.5, z: 11.0 + Math.floor(i / 4) * 0.5 }), semilla: 2121 });
+    aldeanos.lista.forEach((a, i) => { a.p.e.estilo = i % 3; });   // cómo bailan en la fiesta del final
     const anilloPatio = SE.ondas(2, 0.6, '#9fdcff'); anilloPatio.position.set(L.FOGON.x + 1.0, 0.02, L.FOGON.y + 1.0); dyn.add(anilloPatio);
     let bAntes = -1, bCamino = null, bT0 = -99;
 
@@ -140,6 +142,7 @@ export default {
       claro = [...tocones, ...arco(L.TUTOR, 0.95, 6, usados, 0.27, { x: L.TUTOR.x, y: L.TUTOR.y }, Math.PI / 4, 3.4)];      // los que piensan: en los tocones del claro
       fuegoRonda = arco(L.FOGON, 1.0, 14, [], 0.26, { x: L.FOGON.x, y: L.FOGON.y }, Math.PI / 4, 6.0);      // la noche del final: todos alrededor del fuego
       for (const f of FIG.values()) f.clave = null;
+      if (invitados) pistas = pistaBaile();
     }
     /* asientos en arco alrededor de un centro, del lado de la cámara primero (a0) y abriéndose hacia los costados */
     function arco(c, r, cupo, usados, sep, mira, a0 = Math.PI / 4, ancho = 3.6) {
@@ -230,6 +233,58 @@ export default {
       }
     }
 
+    /* ---------- LA FIESTA DEL FINAL (fiesta.js): los de todas las épocas llegan caminando y bailan alrededor de la escuela,
+       del lado de la cámara, por fuera del anillo; la gente del valle baila en el patio, junto al fuego y la Abuela ---------- */
+    let invitados = null, pistas = [];
+    function pistaBaile() {   // el prado del lado de la cámara, por fuera del anillo, repartidos (no un racimo en la entrada)
+      const usados = [...patio, ...claro, { x: LUGAR_BLOOM_FU.x, z: LUGAR_BLOOM_FU.y }], cand = [], c = L.FOGON, a0 = Math.PI / 4;
+      for (let x = 3.2; x < 17.3; x += 0.25) for (let z = 3.2; z < 17.3; z += 0.25) {
+        const r = Math.hypot(x - c.x, z - c.y), a = Math.atan2(z - c.y, x - c.x);
+        if (r < 2.75 || r > 6.2 || enNieblaFu(x, z) || !mo.caminos.libre(x, z) || usados.some(u => Math.hypot(u.x - x, u.z - z) < 0.4)) continue;
+        if (!mo.caminos.libre(x + 0.18, z) || !mo.caminos.libre(x - 0.18, z) || !mo.caminos.libre(x, z + 0.18) || !mo.caminos.libre(x, z - 0.18)) continue;   // con espacio para mover los brazos
+        let da = Math.abs(a - a0); if (da > Math.PI) da = 2 * Math.PI - da;
+        cand.push({ x, z, d: da * 1.1 + (r - 2.75) * 0.32 + ((x * 7.3 + z * 3.1) % 1) * 0.05 });
+      }
+      cand.sort((u, v) => u.d - v.d);
+      const elegidos = [];
+      for (const q of cand) { if (elegidos.length >= INVITADOS.length) break; if (elegidos.some(u => Math.hypot(u.x - q.x, u.z - q.z) < 0.6)) continue; elegidos.push(q); }
+      return elegidos.map(q => ({ ...q, clave: q.x.toFixed(2) + ',' + q.z.toFixed(2) }));
+    }
+    function armarInvitados() {
+      pistas = pistaBaile();
+      const entran = nacimientosVivos && fiestaRecien();
+      invitados = INVITADOS.map((op, i) => {
+        const p = persona(op, { pose: 'quieto', estilo: (i + 1) % 3 }), s = pistas[i];
+        const v = { p, x: s ? s.x : L.FOGON.x, z: s ? s.z : L.FOGON.y, cola: [], clave: null, alfa: entran ? 0 : 1, espera: entran ? 0.15 * i : 0, vel: 0.85 + (i % 4) * 0.06 };
+        if (s && entran) {   // llegan desde más allá, por el mismo rumbo, y entran apareciendo
+          const ax = s.x - L.FOGON.x, az = s.z - L.FOGON.y, D = Math.hypot(ax, az) || 1;
+          for (const k of [2.4, 1.8, 1.2]) { const x = s.x + ax / D * k, z = s.z + az / D * k; if (x < 17.4 && z < 17.4 && !enNieblaFu(x, z) && mo.caminos.libre(x, z)) { v.x = x; v.z = z; break; } }
+        }
+        p.obj.position.set(v.x, 0, v.z); opacidad(p.obj, v.alfa);
+        return v;
+      });
+    }
+    function bailan(t, dt, fiesta) {
+      if (!fiesta) { if (invitados) invitados.forEach(v => ver(v.p, false)); return; }
+      if (!invitados) armarInvitados();
+      invitados.forEach((v, i) => {
+        const s = pistas[i];
+        if (!ver(v.p, !!s)) return;
+        if (v.espera > 0) { v.espera -= dt; v.p.obj.visible = false; return; }
+        if (v.clave !== s.clave) { v.clave = s.clave; v.cola = v.alfa > 0.05 || Math.hypot(v.x - s.x, v.z - s.z) > 0.05 ? mo.caminos.ruta({ x: v.x, z: v.z }, s) : []; if (!v.cola.length) { v.x = s.x; v.z = s.z; } }
+        v.alfa = Math.min(1, v.alfa + dt * 1.1); opacidad(v.p.obj, v.alfa);
+        if (v.cola.length) {
+          const d = v.cola[0], dx = d.x - v.x, dz = d.z - v.z, D = Math.hypot(dx, dz);
+          if (D < 0.05) v.cola.shift(); else { const k = Math.min(D, v.vel * dt); v.x += dx / D * k; v.z += dz / D * k; }
+          ubicar(v.p, v.x, v.z, { x: v.x + dx, y: v.z + dz }); v.p.e.pose = 'andar';
+        } else {
+          ubicar(v.p, s.x, s.z, { x: s.x + 1, y: s.z + 1 }); v.p.obj.rotation.y += 0.45 * Math.sin(t * 1.1 + i);   // de frente a quien mira la fiesta, girando un poco
+          v.p.e.pose = 'bailar';
+        }
+        animar(v.p, t, dt);
+      });
+    }
+
     /* ---------- EL SECRETO DE LA ÉPOCA: el Ars Magna de Ramon Llull. Las noches de invierno, en la boca de la cueva pintada,
        un viejo de túnica gira tres discos de papel con las letras de las ideas: la máquina de encontrar todas las verdades ---------- */
     const secretoArs = (() => {
@@ -251,6 +306,7 @@ export default {
     /* ---------- cada cuadro ---------- */
     function sincronizar(t, dt) {
       const e21 = S.era === 21, luz = luzDia(), noche = nocheCasa(), deNoche = noche > 0.5, oscuro = luz < 0.5;
+      const fiesta = e21 && fiestaActiva();   // el viaje terminó: todos bailan (fiesta.js)
       vestir();
       const lk = Math.max(0, Math.min(1, (0.55 - luz) / 0.25));
       luciernagas.userData.k = estacion().i === 1 ? lk * lk * (3 - 2 * lk) * 0.3 : 0; luciernagas.visible = luciernagas.userData.k > 0.01;
@@ -275,9 +331,9 @@ export default {
       // --- las maestras y los maestros: cada uno con su saber; de noche, a casa (salvo la del patio, con el fuego) ---
       guias.forEach((p, i) => {
         const tec = 87 + i, abierta = e21 && tiene(tec) && fase(tec) === 'meseta' && (i === 0 || i < S.docentes + 2);
-        if (!ver(p, abierta && (!deNoche || (i === 0 && !(S.ganadoFu && deNoche))))) return;   // en la noche del final, la maestra del patio deja el fuego a la Abuela
+        if (!ver(p, abierta && (fiesta || !deNoche || (i === 0 && !(S.ganadoFu && deNoche))))) return;   // en la noche del final, la maestra del patio deja el fuego a la Abuela; en la fiesta, todos
         const m = MAESTROS[i], c = ANCLA[tec]; ubicar(p, m.x, m.y, i === 0 ? { x: L.FOGON.x, y: L.FOGON.y } : { x: c.x + 0.6, y: c.y + 0.6 });
-        p.e.pose = deNoche ? 'quieto' : 'narrar'; animar(p, t, dt); tocP(m.x, m.y, { k: 'docente', i }, p);
+        p.e.pose = fiesta ? 'bailar' : deNoche ? 'quieto' : 'narrar'; p.e.estilo = i % 3; animar(p, t, dt); tocP(m.x, m.y, { k: 'docente', i }, p);
       });
       // --- los que preguntan, los que piensan y los que se van con su «!» ---
       preguntan(t, dt, e21, deNoche);
@@ -285,10 +341,10 @@ export default {
       anilloPatio.visible = esperan > 0 && !deNoche; if (anilloPatio.visible) anilloPatio.userData.latir(t);
 
       // --- la gente del valle: pasea de día; en la noche del final, todos se sientan alrededor del fuego con la Abuela ---
-      const final = e21 && S.ganadoFu && deNoche;
+      const final = e21 && S.ganadoFu && (deNoche || fiesta);   // en la fiesta, de día también
       const vis = final ? Math.min(10, fuegoRonda.length) : deNoche ? 0 : Math.min(10, Math.max(4, Math.round((S.alumnos || 0) / 10)));
-      aldeanos.paso(t, dt, vis, { asiento: final ? i => fuegoRonda[i] ? { ...fuegoRonda[i], pose: 'suelo' } : null : () => null, mira: { x: L.FOGON.x, y: L.FOGON.y } }, a => ({ k: 'alumno', i: a.i + 4 }));
-      if (ver(abuela, final)) { ubicar(abuela, L.FOGON.x - 0.55, L.FOGON.y - 0.55, { x: L.FOGON.x, y: L.FOGON.y }); animar(abuela, t, dt); tocP(L.FOGON.x - 0.55, L.FOGON.y - 0.55, { k: 'pensador', id: 'abuela' }, abuela); }
+      aldeanos.paso(t, dt, vis, { asiento: final ? i => fuegoRonda[i] ? fiesta ? { ...fuegoRonda[i], pose: 'bailar', mira: { x: fuegoRonda[i].x + 1, y: fuegoRonda[i].z + 1 } } : { ...fuegoRonda[i], pose: 'suelo' } : null : () => null, mira: { x: L.FOGON.x, y: L.FOGON.y } }, a => ({ k: 'alumno', i: a.i + 4 }));
+      if (ver(abuela, final)) { ubicar(abuela, L.FOGON.x - 0.55, L.FOGON.y - 0.55, { x: L.FOGON.x, y: L.FOGON.y }); abuela.e.pose = fiesta ? 'palmasSentada' : 'narrarSentada'; animar(abuela, t, dt); tocP(L.FOGON.x - 0.55, L.FOGON.y - 0.55, { k: 'pensador', id: 'abuela' }, abuela); }
 
       // --- Bloom: baja del bus en la parada, espera y, recibido, se queda junto al claro de las preguntas ---
       const estB = e21 ? estadoPensador('bloom') : 0;
@@ -296,14 +352,14 @@ export default {
       if (estB === 2 && bAntes === 1 && nacimientosVivos) bCamino = { cola: mo.caminos.ruta({ x: ESPERA_BLOOM_FU.x, z: ESPERA_BLOOM_FU.y }, { x: LUGAR_BLOOM_FU.x, z: LUGAR_BLOOM_FU.y }), x: ESPERA_BLOOM_FU.x, z: ESPERA_BLOOM_FU.y };
       bAntes = estB;
       const uB = Math.min(1, (t - bT0) / 6), kB = uB * uB * (3 - 2 * uB);
-      if (ver(bloom, e21 && estB >= 1 && !(deNoche && estB === 2))) {
+      if (ver(bloom, e21 && estB >= 1 && (fiesta || !(deNoche && estB === 2)))) {
         let px, pz, anda = false, mira;
         if (estB === 1) { px = ENTRADA_BUS.x + (ESPERA_BLOOM_FU.x - ENTRADA_BUS.x) * kB; pz = ENTRADA_BUS.y + (ESPERA_BLOOM_FU.y - ENTRADA_BUS.y) * kB; anda = uB < 1; mira = anda ? { x: px, y: pz - 1 } : { x: px - 0.5, y: pz - 1 }; opacidad(bloom.obj, Math.min(1, uB * 3)); }
         else {
           px = LUGAR_BLOOM_FU.x; pz = LUGAR_BLOOM_FU.y; mira = { x: L.TUTOR.x, y: L.TUTOR.y };
           if (bCamino) { const c = bCamino, d = c.cola[0]; if (!d) bCamino = null; else { const dx = d.x - c.x, dz = d.z - c.z, D = Math.hypot(dx, dz); if (D < 0.05) c.cola.shift(); else { const s = Math.min(D, 0.55 * dt); c.x += dx / D * s; c.z += dz / D * s; } px = c.x; pz = c.z; anda = true; mira = { x: px + dx, y: pz + dz }; } }
         }
-        ubicar(bloom, px, pz, mira); bloom.e.pose = anda ? 'andar' : estB === 2 ? 'narrar' : 'quieto'; animar(bloom, t, dt);
+        ubicar(bloom, px, pz, mira); bloom.e.pose = anda ? 'andar' : fiesta && estB === 2 ? 'bailar' : estB === 2 ? 'narrar' : 'quieto'; animar(bloom, t, dt);
         tocP(px, pz, { k: 'pensador', id: 'bloom' }, bloom);
       }
 
@@ -317,6 +373,7 @@ export default {
       luzBiblio.intensity = tiene(90) ? n1 * 1.8 * (0.92 + 0.08 * Math.sin(t * 5)) : 0;
       luzFaro.intensity = tiene(92) && niv(92) >= 3 ? n1 * 2.4 : 0;
 
+      bailan(t, dt, fiesta); if (fiesta) seguirFiesta();
       secretoArs(t, dt, luz, e21);
       mo.luces(t);
       vivos.forEach(f => f(t, dt));

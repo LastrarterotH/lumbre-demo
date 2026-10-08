@@ -406,6 +406,30 @@ export const POSES = {
     o['bI.x'] = -2.9; o['cI.x'] = -0.5; o['bI.z'] = 0.25;
     return y;
   },
+  /* LA FIESTA DEL FINAL (fiesta.js): un paso alternado con su brinco y la cadera que se mece; e.estilo elige los brazos
+     (0: arriba, saludando; 1: las palmas; 2: abiertos, como en una ronda) */
+  bailar(o, t, e) {
+    const w = Math.sin(t * 6.5), u = Math.sin(t * 3.25), est = (e && e.estilo) || 0;
+    o['pIx.x'] = -0.55 * Math.max(0, w); o['rIx.x'] = 0.9 * Math.max(0, w);
+    o['pDx.x'] = -0.55 * Math.max(0, -w); o['rDx.x'] = 0.9 * Math.max(0, -w);
+    o['tr.z'] = 0.13 * u; o['tr.x'] = -0.03; o['ca.z'] = -0.1 * u; o['ca.x'] = -0.08 + 0.06 * Math.abs(w);
+    if (est === 1) {
+      const c = Math.abs(Math.sin(t * 6.5));
+      o['bI.x'] = o['bD.x'] = -1.25; o['bI.z'] = 0.18 + 0.4 * c; o['bD.z'] = -0.18 - 0.4 * c; o['cI.x'] = o['cD.x'] = -0.95;
+    } else if (est === 2) {
+      o['bI.z'] = 1.25 + 0.3 * u; o['bD.z'] = -1.25 + 0.3 * u; o['cI.x'] = o['cD.x'] = -0.35; o['bI.x'] = o['bD.x'] = -0.2;
+    } else {
+      o['bI.z'] = 2.55 + 0.3 * u; o['bD.z'] = -2.55 + 0.3 * u; o['cI.x'] = -0.35 - 0.3 * Math.max(0, w); o['cD.x'] = -0.35 - 0.3 * Math.max(0, -w);
+    }
+    return 0.03 * Math.abs(Math.cos(t * 6.5));
+  },
+  /* sentada, dando palmas al ritmo (la Abuela en la fiesta del final) */
+  palmasSentada(o, t, e, sc) {
+    const y = POSES.sentado(o, t, e, sc), c = Math.abs(Math.sin(t * 6.5));
+    o['bI.x'] = o['bD.x'] = -1.2; o['bI.z'] = 0.15 + 0.35 * c; o['bD.z'] = -0.15 - 0.35 * c; o['cI.x'] = o['cD.x'] = -1.0;
+    o['ca.z'] = 0.08 * Math.sin(t * 3.25);
+    return y;
+  },
 };
 
 /* ---------- utilería que se sostiene o se deja en el suelo ---------- */

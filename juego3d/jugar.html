@@ -402,6 +402,10 @@
     padding: 9px 12px 10px; margin-bottom: 6px; border-bottom: none; border-radius: 0 6px 6px 0; }
   #panel .pieza.secreto .fuente { font-size: 11.5px; font-style: italic; opacity: .8; margin-top: 4px; }
   #panel .pieza.secreto.falta { opacity: .6; border-left-color: #9c8f7a; background: transparent; }
+  /* LA FIESTA DEL FINAL (src/fiesta.js): el agradecimiento baja y el velo se aclara, para que se vea bailar al valle */
+  #gracias.fiesta { background: rgba(25, 60, 85, .12); backdrop-filter: none; -webkit-backdrop-filter: none; align-items: flex-end; padding-bottom: 14px; }
+  #gracias.fiesta .caja { max-height: 54%; padding: 18px 26px 16px; box-shadow: 0 14px 44px rgba(0, 0, 0, .45); }
+  @media (max-width: 640px) { #gracias.fiesta .caja { max-height: 58%; margin: 0 10px; padding: 14px 16px 12px; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
@@ -496,11 +500,11 @@
        el título, el cuerpo y el botón; los comentarios salen de CONTACTO_COMENTARIOS, como en el 2D). -->
   <div id="gracias">
     <div class="caja clic">
-      <h2>🙏 Gracias por probar el demo</h2>
-      <div id="gracias-cuerpo"><p>Llegaste hasta el final de lo construido: el fogón, Sumer, Egipto, Atenas, Alejandría, Roma, Bagdad, Kaifeng, París, Tenochtitlan, Ámsterdam y el valle de hoy. Este demo nace para mostrar que un juego
-      puede abrir <b>infinitas posibilidades de didáctica dentro del aula</b>, y tu partida es la mejor prueba de que
-      se puede jugar entero.</p>
-      <p>Es un demo y seguimos trabajando en su desarrollo. Cualquier cosa, puedes comunicarte conmigo.</p></div>
+      <h2>🎉 ¡Gracias por jugar!</h2>
+      <div id="gracias-cuerpo"><p>Llegaste al final del viaje: el fogón, Sumer, Egipto, Atenas, Alejandría, Roma, Bagdad, Kaifeng, París,
+      Tenochtitlan, Ámsterdam y el valle de hoy. Y mira: llegaron todos, de todas las épocas, a celebrarlo alrededor del fuego.</p>
+      <p>Este demo nace para mostrar que un juego puede abrir <b>infinitas posibilidades de didáctica dentro del aula</b>.
+      Seguimos trabajando en su desarrollo. Cualquier cosa, puedes comunicarte conmigo.</p></div>
       <div class="firma">Luis Lastra</div>
       <div class="credito">Lumbre es una idea de Luis Lastra, desarrollada con Claude.</div>
       <div class="botones">
